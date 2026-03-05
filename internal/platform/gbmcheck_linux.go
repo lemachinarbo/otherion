@@ -9,7 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // MonitorGBMErrors intercepts stderr to detect WebKitGTK GBM buffer
@@ -22,7 +23,7 @@ func MonitorGBMErrors() {
 	}
 
 	// Save original stderr fd
-	origFd, err := syscall.Dup(2)
+	origFd, err := unix.Dup(2)
 	if err != nil {
 		return
 	}
@@ -36,7 +37,7 @@ func MonitorGBMErrors() {
 	}
 
 	// Redirect fd 2 to the pipe write end
-	if err := syscall.Dup2(int(pw.Fd()), 2); err != nil {
+	if err := unix.Dup2(int(pw.Fd()), 2); err != nil {
 		pr.Close()
 		pw.Close()
 		origStderr.Close()
