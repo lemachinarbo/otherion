@@ -4,7 +4,7 @@
 **v0.1.39 - 04-02-2026**
 ---
 
-
+- Fixed identity switch on replies and forwards
 
 
 **v0.1.38 - 03-22-2026**
