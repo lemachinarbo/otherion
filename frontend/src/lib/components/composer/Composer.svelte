@@ -890,12 +890,13 @@
     inReplyTo = initialMessage.in_reply_to
     references = initialMessage.references || []
 
-    // Restore attachments and inline images from draft
+    // Restore attachments and inline images from draft/reply/forward
     // Go []byte is serialized as base64 string via JSON, but TS type says number[]
+    // content_base64 is used for efficient Wails RPC transfer (inline images in replies/forwards)
     let htmlBody = initialMessage.html_body || ''
     if (initialMessage.attachments?.length > 0) {
       for (const att of initialMessage.attachments) {
-        const base64Data = att.content as unknown as string
+        const base64Data = att.content_base64 || (att.content as unknown as string)
         if (!base64Data) continue
 
         if (att.inline && att.content_id) {

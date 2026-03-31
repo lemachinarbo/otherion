@@ -17,9 +17,11 @@ import (
 	"github.com/hkdb/aerion/internal/credentials"
 	"github.com/hkdb/aerion/internal/draft"
 	"github.com/hkdb/aerion/internal/folder"
+	"github.com/hkdb/aerion/internal/email"
 	"github.com/hkdb/aerion/internal/imap"
 	"github.com/hkdb/aerion/internal/logging"
 	"github.com/hkdb/aerion/internal/message"
+	"github.com/rs/zerolog"
 	"github.com/hkdb/aerion/internal/oauth2"
 	"github.com/hkdb/aerion/internal/pgp"
 	"github.com/hkdb/aerion/internal/smime"
@@ -723,16 +725,98 @@ func (a *App) PrepareReply(messageID, mode string) (*smtp.ComposeMessage, error)
 		refs = append(refs, ensureAngleBrackets(msg.MessageID))
 	}
 
+	// Fetch inline attachments so cid: references in quoted HTML render correctly
+	var attachments []smtp.Attachment
+	inlineMap, inlineErr := a.attachmentStore.GetInlineByMessage(messageID)
+	if inlineErr != nil {
+		log.Warn().Err(inlineErr).Msg("Failed to get inline attachments for reply/forward")
+	}
+	for cid, dataURL := range inlineMap {
+		ct, b64 := parseDataURL(dataURL)
+		if b64 == "" {
+			continue
+		}
+		attachments = append(attachments, smtp.Attachment{
+			ContentBase64: b64,
+			ContentType:   ct,
+			ContentID:     cid,
+			Inline:        true,
+			Filename:      cid,
+		})
+	}
+
+	// For forwards, also include regular (non-inline) attachments
+	if mode == "forward" {
+		a.fetchForwardAttachments(log, msg, &attachments)
+	}
+
 	return &smtp.ComposeMessage{
-		From:       from,
-		To:         to,
-		Cc:         cc,
-		Subject:    subject,
-		HTMLBody:   htmlBody,
-		TextBody:   textBody,
-		InReplyTo:  ensureAngleBrackets(msg.MessageID),
-		References: refs,
+		From:        from,
+		To:          to,
+		Cc:          cc,
+		Subject:     subject,
+		HTMLBody:    htmlBody,
+		TextBody:    textBody,
+		InReplyTo:   ensureAngleBrackets(msg.MessageID),
+		References:  refs,
+		Attachments: attachments,
 	}, nil
+}
+
+// fetchForwardAttachments fetches regular (non-inline) attachment content from IMAP
+// and appends them to the attachments slice. Failures are logged but not fatal.
+func (a *App) fetchForwardAttachments(log zerolog.Logger, msg *message.Message, attachments *[]smtp.Attachment) {
+	allAtts, err := a.attachmentStore.GetByMessage(msg.ID)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get attachments for forward")
+		return
+	}
+
+	// Filter to non-inline attachments only
+	var regularAtts []*message.Attachment
+	for _, att := range allAtts {
+		if !att.IsInline {
+			regularAtts = append(regularAtts, att)
+		}
+	}
+	if len(regularAtts) == 0 {
+		return
+	}
+
+	// Fetch raw message from IMAP once for all attachments
+	raw, fetchErr := a.syncEngine.FetchRawMessage(a.ctx, msg.AccountID, msg.FolderID, msg.UID)
+	if fetchErr != nil {
+		log.Warn().Err(fetchErr).Msg("Failed to fetch raw message for forward attachments (offline?)")
+		return
+	}
+
+	downloader := email.NewAttachmentDownloader(a.paths.AttachmentsPath())
+	for _, att := range regularAtts {
+		content, extractErr := downloader.ExtractAttachmentContent(raw, att.Filename)
+		if extractErr != nil {
+			log.Warn().Err(extractErr).Str("filename", att.Filename).Msg("Failed to extract attachment for forward")
+			continue
+		}
+		*attachments = append(*attachments, smtp.Attachment{
+			Content:     content,
+			ContentType: att.ContentType,
+			Filename:    att.Filename,
+			Inline:      false,
+		})
+	}
+}
+
+// parseDataURL extracts the content type and base64 data from a data URL.
+// e.g., "data:image/png;base64,ABC123..." → ("image/png", "ABC123...")
+func parseDataURL(dataURL string) (contentType, base64Data string) {
+	// Strip "data:" prefix
+	rest := strings.TrimPrefix(dataURL, "data:")
+	// Split on ";base64,"
+	idx := strings.Index(rest, ";base64,")
+	if idx < 0 {
+		return "", ""
+	}
+	return rest[:idx], rest[idx+8:]
 }
 
 // TestSMTPConnection tests SMTP connection settings
