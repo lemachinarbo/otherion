@@ -16,7 +16,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/rs/zerolog v1.34.0
 	github.com/teamwork/tnef v0.0.0-20200108124832-7deabccfdb32
-	github.com/wailsapp/wails/v2 v2.11.0
+	github.com/wailsapp/wails/v2 v2.12.0
 	github.com/zalando/go-keyring v0.2.6
 	go.mozilla.org/pkcs7 v0.9.0
 	golang.org/x/crypto v0.46.0

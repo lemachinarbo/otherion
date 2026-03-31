@@ -11,6 +11,7 @@
 - Fixed inefficient serilization for inline images and attachments
 - Added inline image and attachment size limit
 - Fixed inline images on replies and forwards
+- Fixed forward signature placement
 
 
 **v0.1.38 - 03-22-2026**

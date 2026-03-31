@@ -88,6 +88,17 @@ export function insertSignatureIntoContent(
       }
     }
 
+    // Check for forwarded message header
+    const fwdMatch = content.match(/---------- Forwarded message ----------/)
+    if (fwdMatch && fwdMatch.index !== undefined) {
+      const fwdBefore = content.substring(0, fwdMatch.index)
+      const fwdPStart = fwdBefore.lastIndexOf('<p')
+      if (fwdPStart > -1) {
+        const forwardedContent = content.substring(fwdPStart)
+        return '<p></p><p></p>' + signatureHtml + '<p></p><p></p>' + forwardedContent
+      }
+    }
+
     // Fallback: try blockquote
     const blockquoteIndex = content.indexOf('<blockquote')
     if (blockquoteIndex > -1) {
