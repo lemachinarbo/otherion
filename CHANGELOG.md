@@ -13,6 +13,7 @@
 - Added inline image and attachment size limit
 - Fixed inline images on replies and forwards
 - Fixed forward signature placement
+- Added AttachConsole to for Windows builds for debug output
 
 
 **v0.1.38 - 03-22-2026**

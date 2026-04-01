@@ -45,6 +45,11 @@ func main() {
 	platform.MonitorGBMErrors()
 	flag.Parse()
 
+	// On Windows, GUI apps have no console. Allocate one for debug output.
+	if DebugMode() {
+		platform.AttachConsole()
+	}
+
 	// Check for mailto: URL in non-flag arguments
 	var mailtoData *app.MailtoData
 	var rawMailtoArg string
