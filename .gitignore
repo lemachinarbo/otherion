@@ -1,5 +1,6 @@
 # Context
 CLAUDE.md
+AGENTS.md
 context
 aerion
 aerion.exe
@@ -56,3 +57,4 @@ npm-debug.log*
 
 # Cache
 .cache/
+.gitnexus

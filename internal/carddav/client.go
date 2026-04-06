@@ -77,18 +77,39 @@ func (t *xmlFixTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// fixETagValue adds quotes around an unquoted ETag value.
-// If the value is already quoted, it is returned unchanged.
+// fixETagValue normalizes an ETag value for go-webdav's strconv.Unquote().
+// Handles: literal quotes, XML-entity-encoded quotes (&quot;), weak ETags (W/), unquoted values.
+// Operates on raw XML bytes (before XML entity resolution).
 func fixETagValue(prefix []byte, etagStr string, suffix []byte) []byte {
 	var buf bytes.Buffer
 	buf.Write(prefix)
-	if strings.HasPrefix(etagStr, `"`) && strings.HasSuffix(etagStr, `"`) {
-		buf.WriteString(etagStr)
+
+	cleaned := etagStr
+
+	// Strip weak ETag prefix if present
+	if strings.HasPrefix(cleaned, "W/") || strings.HasPrefix(cleaned, "w/") {
+		cleaned = cleaned[2:]
+	}
+
+	// Already quoted with literal quotes — leave as-is
+	if strings.HasPrefix(cleaned, `"`) && strings.HasSuffix(cleaned, `"`) && len(cleaned) >= 2 {
+		buf.WriteString(cleaned)
 		buf.Write(suffix)
 		return buf.Bytes()
 	}
+
+	// Quoted with XML-entity-encoded quotes (&quot;...&quot;) — leave as-is
+	// The XML parser will resolve these to literal quotes before go-webdav sees them.
+	if strings.HasPrefix(cleaned, "&quot;") && strings.HasSuffix(cleaned, "&quot;") {
+		buf.WriteString(cleaned)
+		buf.Write(suffix)
+		return buf.Bytes()
+	}
+
+	// Truly unquoted — wrap in literal quotes
+	cleaned = strings.Trim(cleaned, `"`)
 	buf.WriteByte('"')
-	buf.WriteString(etagStr)
+	buf.WriteString(cleaned)
 	buf.WriteByte('"')
 	buf.Write(suffix)
 	return buf.Bytes()
