@@ -97,19 +97,15 @@ Transparency Disclaimer: This project leaveraged Claude models heavily to implem
 
 Confirmed future features:
 
-- Search feature in `copy to` and `move to` dialog
-- Visually differentiate folders and subfolders in `copy to` and `move to` dialog
-- Auto-sync all non-core folders (Core = Inbox, Sent, Draft, Trash)
-- Selective auto-sync of non-core folders
 - Extension/Plugin system with the following shipped disabled:
     - Calendar
     - Contacts
+- Post quantum ready encryption
 
 Potential features in the future:
 
 - Customizable shortcut keys
 - Advance Search
-- Explore the possibility of supporting [Age](https://github.com/FiloSottile/age) as an encryption method
 - AI Assisted Composition (Ollama)
 
 
