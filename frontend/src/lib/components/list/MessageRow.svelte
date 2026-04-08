@@ -46,7 +46,7 @@
     selected
       ? 'bg-primary/10'
       : 'hover:bg-muted/50'
-  } {getAccentBarUnread() && message.unread ? 'border-l-2 border-l-foreground' : ''}"
+  } {getAccentBarUnread() && message.unread ? 'border-l-2 border-l-primary' : ''}"
   onclick={onSelect}
   onkeydown={(e) => e.key === 'Enter' && onSelect()}
   role="button"
