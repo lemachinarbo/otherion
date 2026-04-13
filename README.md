@@ -33,11 +33,12 @@ A standalone lightweight e-mail client inspired by [Geary](https://wiki.gnome.or
 - Independence - No dependency on Gnome Online Accounts or other system services
 - Search That Works - Basic search that actually finds your emails
 
+Aerion is CASA Tiered 2 Certified by Google's preferred [authorized assessor](https://appdefensealliance.dev/casa/casa-assessors): [TAC Security](https://tacsecurity.com/)
 
 ### 🖥 OS Support
 ---
 
-Although Linux is a first-class citizen here, it should also work on:
+Although Linux is a first-class citizen here, it also works on:
 
 - MacOS
 - Windows
@@ -71,6 +72,7 @@ Although Linux is a first-class citizen here, it should also work on:
 - Multiple color themes (More to come...)
 - PGP & S/MIME support
 - [Keyboard Shortcuts](docs/KEYBOARD_SHORTCUTS.md)
+
 
 ### 🚀 Installation
 ---
