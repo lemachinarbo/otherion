@@ -708,8 +708,16 @@
       const identity = identities.find(i => i.id === selectedIdentityId)
       if (identity) {
         const content = editor?.getHTML() || ''
-        // Don't append if signature marker already exists (draft already has signature)
-        if (!hasSignatureMarker(content)) {
+        // Don't append if signature marker already exists in the user's compose area.
+        // Only check content before the quoted section — markers inside quoted history
+        // (from previous replies with signatures) should not prevent injection.
+        const quoteIdx = content.indexOf('<blockquote')
+        const wroteIdx = content.search(/wrote:\s*(<br[^>]*>)?\s*<\/p>/i)
+        const fwdIdx = content.indexOf('---------- Forwarded message ----------')
+        const boundaries = [quoteIdx, wroteIdx, fwdIdx].filter(i => i > -1)
+        const quoteBoundary = boundaries.length > 0 ? Math.min(...boundaries) : content.length
+        const preQuoteContent = content.substring(0, quoteBoundary)
+        if (!hasSignatureMarker(preQuoteContent)) {
           appendSignatureForIdentity(identity)
         }
       }

@@ -149,7 +149,7 @@
           <li>Fixed inefficient serilization for inline images and attachments</li>
           <li>Added inline image and attachment size limit</li>
           <li>Fixed inline images on replies and forwards</li>
-          <li>Fixed forward signature placement</li>
+          <li>Fixed reply/forward signature placement</li>
           <li>Added AttachConsole to for Windows builds for debug output</li>
           <li>Fixed murena.io CardDav - #86</li>
           <li>Fixed some HK translation</li>

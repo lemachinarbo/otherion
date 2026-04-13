@@ -22,7 +22,7 @@
 - Fixed inefficient serilization for inline images and attachments
 - Added inline image and attachment size limit
 - Fixed inline images on replies and forwards
-- Fixed forward signature placement
+- Fixed reply/forward signature placement
 - Added AttachConsole to for Windows builds for debug output
 - Fixed murena.io CardDav - [#86](https://github.com/hkdb/aerion/issues/86)
 - Fixed some HK translations
