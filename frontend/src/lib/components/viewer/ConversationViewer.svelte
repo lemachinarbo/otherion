@@ -1064,6 +1064,10 @@
     handleForward()
   }
 
+  export function isImagesLoaded(messageId: string): boolean {
+    return messagesWithImagesLoaded.has(messageId)
+  }
+
   export function loadImages() {
     // Dispatch custom event that EmailBody components listen to
     window.dispatchEvent(new CustomEvent('load-remote-images'))

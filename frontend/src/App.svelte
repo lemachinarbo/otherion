@@ -680,7 +680,7 @@
           }
           const msgId = getLastMessageId()
           if (!msgId) return
-          handleReply(e.shiftKey ? 'reply-all' : 'reply', msgId)
+          handleReply(e.shiftKey ? 'reply-all' : 'reply', msgId, viewerRef?.isImagesLoaded(msgId) || false)
           return
         }
         case 'f': {
@@ -691,7 +691,7 @@
             return
           }
           const msgId = getLastMessageId()
-          if (msgId) handleReply('forward', msgId)
+          if (msgId) handleReply('forward', msgId, viewerRef?.isImagesLoaded(msgId) || false)
           return
         }
         case 's':
