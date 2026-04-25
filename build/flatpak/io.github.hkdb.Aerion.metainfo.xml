@@ -163,6 +163,7 @@
           <li>Fixed undo delete regression</li>
           <li>Fixed name and subject preview decoding - #104</li>
           <li>Fixed provider icons consistency - #102</li>
+          <li>Added better pgp and s/mime error feedback</li>
         </ul>
       </description>
     </release>

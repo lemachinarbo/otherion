@@ -468,11 +468,13 @@
     if (msg.includes('does not match this account')) {
       return type.includes('key') ? $_('security.keyEmailMismatch') : $_('security.certEmailMismatch')
     }
+    // Include the actual error detail for diagnosis
+    const detail = msg.length > 0 ? `: ${msg}` : ''
     switch (type) {
-      case 'cert': return $_('security.certImportFailed')
-      case 'key': return $_('security.keyImportFailed')
-      case 'recipientCert': return $_('security.recipientCertImportFailed')
-      case 'recipientKey': return $_('security.recipientKeyImportFailed')
+      case 'cert': return $_('security.certImportFailed') + detail
+      case 'key': return $_('security.keyImportFailed') + detail
+      case 'recipientCert': return $_('security.recipientCertImportFailed') + detail
+      case 'recipientKey': return $_('security.recipientKeyImportFailed') + detail
     }
   }
 
