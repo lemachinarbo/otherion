@@ -17,9 +17,11 @@ import (
 	"github.com/hkdb/aerion/internal/credentials"
 	"github.com/hkdb/aerion/internal/draft"
 	"github.com/hkdb/aerion/internal/folder"
+	"github.com/hkdb/aerion/internal/email"
 	"github.com/hkdb/aerion/internal/imap"
 	"github.com/hkdb/aerion/internal/logging"
 	"github.com/hkdb/aerion/internal/message"
+	"github.com/rs/zerolog"
 	"github.com/hkdb/aerion/internal/oauth2"
 	"github.com/hkdb/aerion/internal/pgp"
 	"github.com/hkdb/aerion/internal/smime"
@@ -151,22 +153,34 @@ func (ops *composeOps) getIMAPCredentials(ctx context.Context, accountID string)
 	return &config, nil
 }
 
+// getSpecialFolder resolves a special folder for an account, checking the
+// user's explicit mapping first, then falling back to auto-detected type.
+// Mirrors App.GetSpecialFolder (app/folder.go) for use within composeOps.
+func (ops *composeOps) getSpecialFolder(accountID string, folderType folder.Type) (*folder.Folder, error) {
+	acc, err := ops.accountStore.Get(accountID)
+	if err != nil || acc == nil {
+		return ops.folderStore.GetByType(accountID, folderType)
+	}
+	mappedPath := acc.GetFolderMapping(string(folderType))
+	if mappedPath != "" {
+		f, err := ops.folderStore.GetByPath(accountID, mappedPath)
+		if err == nil && f != nil {
+			return f, nil
+		}
+	}
+	return ops.folderStore.GetByType(accountID, folderType)
+}
+
 // saveToSentFolder appends the sent message to the Sent folder via IMAP.
 func (ops *composeOps) saveToSentFolder(ctx context.Context, accountID string, acc *account.Account, rawMsg []byte) error {
 	log := logging.WithComponent("composeOps")
 
-	// Get the Sent folder path (mapping-aware: check account mapping first, then auto-detect)
-	var sentPath string
-	if acc.SentFolderPath != "" {
-		sentPath = acc.SentFolderPath
+	// Resolve the Sent folder using the same logic as App.GetSpecialFolder
+	sentFolder, err := ops.getSpecialFolder(accountID, folder.TypeSent)
+	if err != nil || sentFolder == nil {
+		return fmt.Errorf("no Sent folder configured or detected")
 	}
-	if sentPath == "" {
-		sentFolder, err := ops.folderStore.GetByType(accountID, folder.TypeSent)
-		if err != nil || sentFolder == nil {
-			return fmt.Errorf("no Sent folder configured or detected")
-		}
-		sentPath = sentFolder.Path
-	}
+	sentPath := sentFolder.Path
 
 	log.Debug().
 		Str("account_id", accountID).
@@ -341,6 +355,13 @@ func (ops *composeOps) sendMessage(ctx context.Context, accountID string, msg sm
 	smtpConfig.Port = acc.SMTPPort
 	smtpConfig.Security = smtp.SecurityType(acc.SMTPSecurity)
 	smtpConfig.Username = acc.Username
+	// Shared mailboxes authenticate SMTP with the parent account's username
+	if acc.SharedMailboxParentID != "" {
+		parent, parentErr := ops.accountStore.Get(acc.SharedMailboxParentID)
+		if parentErr == nil && parent != nil {
+			smtpConfig.Username = parent.Username
+		}
+	}
 	smtpConfig.TLSConfig = certificate.BuildTLSConfig(acc.SMTPHost, ops.certStore)
 
 	// Handle authentication based on auth type
@@ -513,6 +534,7 @@ func (a *App) handleExternalMailto(rawURL string) {
 
 // syncSentFolder syncs the Sent folder for an account after sending a message
 func (a *App) syncSentFolder(accountID string) error {
+	defer recoverPanic("app.compose", "sync sent folder")
 	log := logging.WithComponent("app")
 
 	sentFolder, err := a.GetSpecialFolder(accountID, folder.TypeSent)
@@ -698,6 +720,11 @@ func (a *App) PrepareReply(messageID, mode string) (*smtp.ComposeMessage, error)
 		quotedHTML = "<p>" + strings.ReplaceAll(escapeHTML(msg.BodyText), "\n", "<br>") + "</p>"
 	}
 
+	// Block remote images in quoted content to prevent tracking pixels.
+	// Original URLs are preserved in data-original-src for restoration on send.
+	// The frontend can unblock them if the sender is in the image allowlist.
+	quotedHTML = email.BlockRemoteImages(quotedHTML)
+
 	var htmlBody, textBody string
 	if mode == "forward" {
 		// Forward format
@@ -723,16 +750,98 @@ func (a *App) PrepareReply(messageID, mode string) (*smtp.ComposeMessage, error)
 		refs = append(refs, ensureAngleBrackets(msg.MessageID))
 	}
 
+	// Fetch inline attachments so cid: references in quoted HTML render correctly
+	var attachments []smtp.Attachment
+	inlineMap, inlineErr := a.attachmentStore.GetInlineByMessage(messageID)
+	if inlineErr != nil {
+		log.Warn().Err(inlineErr).Msg("Failed to get inline attachments for reply/forward")
+	}
+	for cid, dataURL := range inlineMap {
+		ct, b64 := parseDataURL(dataURL)
+		if b64 == "" {
+			continue
+		}
+		attachments = append(attachments, smtp.Attachment{
+			ContentBase64: b64,
+			ContentType:   ct,
+			ContentID:     cid,
+			Inline:        true,
+			Filename:      cid,
+		})
+	}
+
+	// For forwards, also include regular (non-inline) attachments
+	if mode == "forward" {
+		a.fetchForwardAttachments(log, msg, &attachments)
+	}
+
 	return &smtp.ComposeMessage{
-		From:       from,
-		To:         to,
-		Cc:         cc,
-		Subject:    subject,
-		HTMLBody:   htmlBody,
-		TextBody:   textBody,
-		InReplyTo:  ensureAngleBrackets(msg.MessageID),
-		References: refs,
+		From:        from,
+		To:          to,
+		Cc:          cc,
+		Subject:     subject,
+		HTMLBody:    htmlBody,
+		TextBody:    textBody,
+		InReplyTo:   ensureAngleBrackets(msg.MessageID),
+		References:  refs,
+		Attachments: attachments,
 	}, nil
+}
+
+// fetchForwardAttachments fetches regular (non-inline) attachment content from IMAP
+// and appends them to the attachments slice. Failures are logged but not fatal.
+func (a *App) fetchForwardAttachments(log zerolog.Logger, msg *message.Message, attachments *[]smtp.Attachment) {
+	allAtts, err := a.attachmentStore.GetByMessage(msg.ID)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get attachments for forward")
+		return
+	}
+
+	// Filter to non-inline attachments only
+	var regularAtts []*message.Attachment
+	for _, att := range allAtts {
+		if !att.IsInline {
+			regularAtts = append(regularAtts, att)
+		}
+	}
+	if len(regularAtts) == 0 {
+		return
+	}
+
+	// Fetch raw message from IMAP once for all attachments
+	raw, fetchErr := a.syncEngine.FetchRawMessage(a.ctx, msg.AccountID, msg.FolderID, msg.UID)
+	if fetchErr != nil {
+		log.Warn().Err(fetchErr).Msg("Failed to fetch raw message for forward attachments (offline?)")
+		return
+	}
+
+	downloader := email.NewAttachmentDownloader(a.paths.AttachmentsPath())
+	for _, att := range regularAtts {
+		content, extractErr := downloader.ExtractAttachmentContent(raw, att.Filename)
+		if extractErr != nil {
+			log.Warn().Err(extractErr).Str("filename", att.Filename).Msg("Failed to extract attachment for forward")
+			continue
+		}
+		*attachments = append(*attachments, smtp.Attachment{
+			Content:     content,
+			ContentType: att.ContentType,
+			Filename:    att.Filename,
+			Inline:      false,
+		})
+	}
+}
+
+// parseDataURL extracts the content type and base64 data from a data URL.
+// e.g., "data:image/png;base64,ABC123..." → ("image/png", "ABC123...")
+func parseDataURL(dataURL string) (contentType, base64Data string) {
+	// Strip "data:" prefix
+	rest := strings.TrimPrefix(dataURL, "data:")
+	// Split on ";base64,"
+	idx := strings.Index(rest, ";base64,")
+	if idx < 0 {
+		return "", ""
+	}
+	return rest[:idx], rest[idx+8:]
 }
 
 // TestSMTPConnection tests SMTP connection settings

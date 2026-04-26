@@ -4,6 +4,7 @@ export namespace account {
 	    id: string;
 	    name: string;
 	    email: string;
+	    sharedMailboxParentId?: string;
 	    imapHost: string;
 	    imapPort: number;
 	    imapSecurity: string;
@@ -17,6 +18,8 @@ export namespace account {
 	    color: string;
 	    syncPeriodDays: number;
 	    syncInterval: number;
+	    syncAllFolders: boolean;
+	    syncFoldersEnabled: boolean;
 	    readReceiptRequestPolicy: string;
 	    sentFolderPath?: string;
 	    draftsFolderPath?: string;
@@ -39,6 +42,7 @@ export namespace account {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.email = source["email"];
+	        this.sharedMailboxParentId = source["sharedMailboxParentId"];
 	        this.imapHost = source["imapHost"];
 	        this.imapPort = source["imapPort"];
 	        this.imapSecurity = source["imapSecurity"];
@@ -52,6 +56,8 @@ export namespace account {
 	        this.color = source["color"];
 	        this.syncPeriodDays = source["syncPeriodDays"];
 	        this.syncInterval = source["syncInterval"];
+	        this.syncAllFolders = source["syncAllFolders"];
+	        this.syncFoldersEnabled = source["syncFoldersEnabled"];
 	        this.readReceiptRequestPolicy = source["readReceiptRequestPolicy"];
 	        this.sentFolderPath = source["sentFolderPath"];
 	        this.draftsFolderPath = source["draftsFolderPath"];
@@ -86,6 +92,7 @@ export namespace account {
 	    name: string;
 	    displayName: string;
 	    email: string;
+	    sharedMailboxParentId?: string;
 	    imapHost: string;
 	    imapPort: number;
 	    imapSecurity: string;
@@ -98,6 +105,8 @@ export namespace account {
 	    color: string;
 	    syncPeriodDays: number;
 	    syncInterval: number;
+	    syncAllFolders: boolean;
+	    syncFoldersEnabled: boolean;
 	    readReceiptRequestPolicy: string;
 	    sentFolderPath?: string;
 	    draftsFolderPath?: string;
@@ -116,6 +125,7 @@ export namespace account {
 	        this.name = source["name"];
 	        this.displayName = source["displayName"];
 	        this.email = source["email"];
+	        this.sharedMailboxParentId = source["sharedMailboxParentId"];
 	        this.imapHost = source["imapHost"];
 	        this.imapPort = source["imapPort"];
 	        this.imapSecurity = source["imapSecurity"];
@@ -128,6 +138,8 @@ export namespace account {
 	        this.color = source["color"];
 	        this.syncPeriodDays = source["syncPeriodDays"];
 	        this.syncInterval = source["syncInterval"];
+	        this.syncAllFolders = source["syncAllFolders"];
+	        this.syncFoldersEnabled = source["syncFoldersEnabled"];
 	        this.readReceiptRequestPolicy = source["readReceiptRequestPolicy"];
 	        this.sentFolderPath = source["sentFolderPath"];
 	        this.draftsFolderPath = source["draftsFolderPath"];
@@ -986,6 +998,7 @@ export namespace folder {
 	    unreadCount: number;
 	    // Go type: time
 	    lastSync?: any;
+	    subscribed: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Folder(source);
@@ -1005,6 +1018,7 @@ export namespace folder {
 	        this.totalCount = source["totalCount"];
 	        this.unreadCount = source["unreadCount"];
 	        this.lastSync = this.convertValues(source["lastSync"], null);
+	        this.subscribed = source["subscribed"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1800,6 +1814,7 @@ export namespace smtp {
 	    filename: string;
 	    content_type: string;
 	    content: number[];
+	    content_base64?: string;
 	    content_id: string;
 	    inline: boolean;
 	
@@ -1812,6 +1827,7 @@ export namespace smtp {
 	        this.filename = source["filename"];
 	        this.content_type = source["content_type"];
 	        this.content = source["content"];
+	        this.content_base64 = source["content_base64"];
 	        this.content_id = source["content_id"];
 	        this.inline = source["inline"];
 	    }

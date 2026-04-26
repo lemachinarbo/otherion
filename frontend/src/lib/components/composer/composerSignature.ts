@@ -14,7 +14,6 @@ export type ComposeMode = 'new' | 'reply' | 'reply-all' | 'forward'
  * Using three zero-width spaces as an invisible marker that TipTap preserves in text nodes
  */
 export const SIGNATURE_MARKER = '\u200B\u200B\u200B'
-export const SIGNATURE_MARKER_REGEX = /\u200B\u200B\u200B[\s\S]*$/
 
 /**
  * Build signature HTML from identity settings
@@ -89,6 +88,17 @@ export function insertSignatureIntoContent(
       }
     }
 
+    // Check for forwarded message header
+    const fwdMatch = content.match(/---------- Forwarded message ----------/)
+    if (fwdMatch && fwdMatch.index !== undefined) {
+      const fwdBefore = content.substring(0, fwdMatch.index)
+      const fwdPStart = fwdBefore.lastIndexOf('<p')
+      if (fwdPStart > -1) {
+        const forwardedContent = content.substring(fwdPStart)
+        return '<p></p><p></p>' + signatureHtml + '<p></p><p></p>' + forwardedContent
+      }
+    }
+
     // Fallback: try blockquote
     const blockquoteIndex = content.indexOf('<blockquote')
     if (blockquoteIndex > -1) {
@@ -108,14 +118,53 @@ export function insertSignatureIntoContent(
 }
 
 /**
- * Remove signature from content using the marker
+ * Remove signature from content using the marker, preserving quoted content (replies/forwards)
  */
 export function removeSignatureFromContent(content: string): string {
-  // Remove everything from the signature marker to the end
-  let result = content.replace(SIGNATURE_MARKER_REGEX, '')
-  // Clean up trailing <br> tags that were before the signature
-  result = result.replace(/(<br\s*\/?>)+\s*$/, '')
-  return result
+  const markerIndex = content.indexOf(SIGNATURE_MARKER)
+  if (markerIndex === -1) return content
+
+  // Find the start of the element containing the marker (the <p> tag)
+  const beforeMarker = content.substring(0, markerIndex)
+  const sigElementStart = beforeMarker.lastIndexOf('<p')
+  if (sigElementStart === -1) {
+    // Fallback: remove marker to end
+    return content.substring(0, markerIndex).replace(/(<br\s*\/?>)+\s*$/, '')
+  }
+
+  const afterMarker = content.substring(markerIndex)
+
+  // Look for quoted content after the signature marker:
+  // 1. Citation line ("wrote:" pattern)
+  const wroteMatch = afterMarker.match(/<p[^>]*>(?:(?!<\/p>).)*wrote:\s*(<br[^>]*>)?\s*<\/p>/i)
+  // 2. Blockquote
+  const blockquoteMatch = afterMarker.match(/<blockquote/)
+
+  // Find the earliest quoted content boundary
+  let quotedStart = -1
+  if (wroteMatch?.index !== undefined) {
+    quotedStart = markerIndex + wroteMatch.index
+  }
+  if (blockquoteMatch?.index !== undefined) {
+    const bqStart = markerIndex + blockquoteMatch.index
+    if (quotedStart === -1 || bqStart < quotedStart) {
+      quotedStart = bqStart
+    }
+  }
+
+  if (quotedStart === -1) {
+    // No quoted content found - remove from signature start to end
+    let result = content.substring(0, sigElementStart)
+    result = result.replace(/(<p>\s*<\/p>\s*)+$/, '')
+    result = result.replace(/(<br\s*\/?>)+\s*$/, '')
+    return result
+  }
+
+  // Preserve quoted content, remove only the signature between
+  const beforeSig = content.substring(0, sigElementStart)
+  const quotedContent = content.substring(quotedStart)
+
+  return beforeSig + quotedContent
 }
 
 /**

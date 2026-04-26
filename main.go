@@ -45,6 +45,11 @@ func main() {
 	platform.MonitorGBMErrors()
 	flag.Parse()
 
+	// On Windows, GUI apps have no console. Allocate one for debug output.
+	if DebugMode() {
+		platform.AttachConsole()
+	}
+
 	// Check for mailto: URL in non-flag arguments
 	var mailtoData *app.MailtoData
 	var rawMailtoArg string
@@ -106,13 +111,14 @@ func runMainMode(mailtoData *app.MailtoData, rawMailtoArg string) {
 
 	// Create application with options
 	err = wails.Run(&options.App{
-		Title:       "Aerion",
-		Width:       1280,
-		Height:      800,
-		MinWidth:    360,
-		MinHeight:   400,
-		Frameless:   !nativeTitleBar,
-		StartHidden: true, // Hide until frontend is ready to prevent white flash
+		Title:                    "Aerion",
+		Width:                    1280,
+		Height:                   800,
+		MinWidth:                 360,
+		MinHeight:                400,
+		Frameless:                !nativeTitleBar,
+		StartHidden:              true, // Hide until frontend is ready to prevent white flash
+		EnableDefaultContextMenu: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -197,13 +203,14 @@ func runComposerMode() {
 
 	// Run Wails application for composer window
 	err := wails.Run(&options.App{
-		Title:       title,
-		Width:       800,
-		Height:      600,
-		MinWidth:    500,
-		MinHeight:   400,
-		Frameless:   !composerNativeTitleBar,
-		StartHidden: true, // Hide until frontend is ready to prevent white flash
+		Title:                    title,
+		Width:                    800,
+		Height:                   600,
+		MinWidth:                 500,
+		MinHeight:                400,
+		Frameless:                !composerNativeTitleBar,
+		StartHidden:              true, // Hide until frontend is ready to prevent white flash
+		EnableDefaultContextMenu: true,
 		AssetServer: &assetserver.Options{
 			// Don't provide Assets here - we use Handler exclusively
 			// so we can rewrite "/" to "/composer.html"

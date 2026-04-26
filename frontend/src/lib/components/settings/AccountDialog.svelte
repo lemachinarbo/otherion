@@ -54,6 +54,8 @@
   let smtpSecurity = $state('starttls')
   let syncPeriodDays = $state('180')
   let syncInterval = $state('30')
+  let syncAllFolders = $state(false)
+  let syncFoldersEnabled = $state(false)
   let readReceiptRequestPolicy = $state('never')
   let authType = $state('password')
   
@@ -90,6 +92,8 @@
       smtpSecurity = editAccount.smtpSecurity
       syncPeriodDays = String(editAccount.syncPeriodDays)
       syncInterval = String(editAccount.syncInterval ?? 30)
+      syncAllFolders = editAccount.syncAllFolders || false
+      syncFoldersEnabled = editAccount.syncFoldersEnabled || false
       readReceiptRequestPolicy = editAccount.readReceiptRequestPolicy || 'never'
       authType = editAccount.authType || 'password'
       color = editAccount.color || ''
@@ -163,6 +167,8 @@
         authType,
         syncPeriodDays: Number(syncPeriodDays),
         syncInterval: Number(syncInterval),
+        syncAllFolders,
+        syncFoldersEnabled,
         readReceiptRequestPolicy,
         sentFolderPath,
         draftsFolderPath,
@@ -278,7 +284,7 @@
   <Dialog.Content class="max-w-xl max-h-[90vh] overflow-hidden flex flex-col" preventCloseAutoFocus>
     <Dialog.Header>
       <Dialog.Title>
-        {editAccount ? $_('account.editTitle') : $_('account.addTitle')}
+        {editAccount?.sharedMailboxParentId ? $_('account.editSharedMailboxTitle') : editAccount ? $_('account.editTitle') : $_('account.addTitle')}
       </Dialog.Title>
       <Dialog.Description>
         {editAccount
@@ -335,7 +341,7 @@
           </Tabs.Content>
 
           <Tabs.Content value="identity" class="mt-0">
-            <AccountIdentityTab accountId={editAccount.id} />
+            <AccountIdentityTab accountId={editAccount.id} {editAccount} />
           </Tabs.Content>
 
           <Tabs.Content value="security" class="mt-0">
@@ -369,6 +375,10 @@
               onSmtpSecurityChange={(v) => smtpSecurity = v}
               onSyncIntervalChange={(v) => syncInterval = v}
               onReadReceiptPolicyChange={(v) => readReceiptRequestPolicy = v}
+              bind:syncAllFolders
+              onSyncAllFoldersChange={(v) => syncAllFolders = v}
+              bind:syncFoldersEnabled
+              onSyncFoldersEnabledChange={(v) => syncFoldersEnabled = v}
               onFolderMappingChange={(type, v) => {
                 switch (type) {
                   case 'sent': sentFolderPath = v; break

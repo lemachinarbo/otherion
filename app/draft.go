@@ -90,10 +90,35 @@ func (ops *draftOps) getSpecialFolder(accountID string, folderType folder.Type) 
 	return ops.folderStore.GetByType(accountID, folderType)
 }
 
+// resolveAttachmentContent resolves ContentBase64 to Content for all attachments,
+// normalizing the representation for storage and processing.
+func resolveAttachmentContent(attachments []smtp.Attachment) ([]smtp.Attachment, error) {
+	resolved := make([]smtp.Attachment, len(attachments))
+	for i, att := range attachments {
+		content, err := att.ResolveContent()
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve content for %s: %w", att.Filename, err)
+		}
+		resolved[i] = att
+		resolved[i].Content = content
+		resolved[i].ContentBase64 = "" // Clear to avoid storing both
+	}
+	return resolved, nil
+}
+
 // encryptDraftBody encrypts the draft body to self if encryption is enabled.
 // Handles S/MIME and PGP (mutually exclusive). Falls back to unencrypted on failure.
 func (ops *draftOps) encryptDraftBody(accountID, fromEmail string, msg smtp.ComposeMessage) (*encryptResult, error) {
 	log := logging.WithComponent("draft")
+
+	// Resolve ContentBase64 → Content for all attachments before processing
+	if len(msg.Attachments) > 0 {
+		resolved, err := resolveAttachmentContent(msg.Attachments)
+		if err != nil {
+			return nil, err
+		}
+		msg.Attachments = resolved
+	}
 
 	result := &encryptResult{
 		bodyHTML: msg.HTMLBody,
@@ -558,6 +583,7 @@ func (a *App) SaveDraft(accountID string, msg smtp.ComposeMessage, existingDraft
 	a.syncMu.Unlock()
 
 	go func() {
+		defer recoverPanic("app.draft", "sync draft to IMAP")
 		defer close(done)
 		defer func() {
 			a.syncMu.Lock()
@@ -630,6 +656,7 @@ func (a *App) SyncPendingDrafts(accountID string) error {
 
 // syncAllPendingDrafts syncs pending drafts for all accounts
 func (a *App) syncAllPendingDrafts() {
+	defer recoverPanic("app.draft", "sync pending drafts")
 	log := logging.WithComponent("app")
 
 	accounts, err := a.accountStore.List()
@@ -700,6 +727,7 @@ func (a *App) DeleteDraft(draftID string) error {
 		accountID := d.AccountID
 		folderID := draftsFolder.ID
 		go func() {
+			defer recoverPanic("app.draft", "sync drafts folder after delete")
 			if err := a.SyncFolder(accountID, folderID); err != nil {
 				log.Warn().Err(err).Str("folderID", folderID).Msg("Failed to sync Drafts folder after draft delete")
 			}

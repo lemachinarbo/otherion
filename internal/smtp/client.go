@@ -15,6 +15,32 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// deadlineConn wraps a net.Conn and sets per-read/write deadlines before each
+// I/O operation, preventing indefinite blocking on unresponsive servers.
+type deadlineConn struct {
+	net.Conn
+	readTimeout  time.Duration
+	writeTimeout time.Duration
+}
+
+func (c *deadlineConn) Read(b []byte) (int, error) {
+	if c.readTimeout > 0 {
+		if err := c.Conn.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
+			return 0, err
+		}
+	}
+	return c.Conn.Read(b)
+}
+
+func (c *deadlineConn) Write(b []byte) (int, error) {
+	if c.writeTimeout > 0 {
+		if err := c.Conn.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+			return 0, err
+		}
+	}
+	return c.Conn.Write(b)
+}
+
 // SecurityType represents the connection security method
 type SecurityType string
 
@@ -94,19 +120,38 @@ func (c *Client) Connect() error {
 
 	switch c.config.Security {
 	case SecurityTLS:
-		// Connect with TLS directly (port 465)
+		// Connect with TLS directly (port 465).
+		// Wrap with deadlineConn BEFORE TLS so tls.Conn is the outer layer.
+		// net/smtp checks for *tls.Conn to set serverInfo.TLS — if deadlineConn
+		// wraps the outside, PlainAuth sees "unencrypted connection" and refuses.
 		dialer := &net.Dialer{Timeout: c.config.ConnectTimeout}
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
-		if err != nil {
-			return fmt.Errorf("failed to connect with TLS: %w", err)
+		rawConn, dialErr := dialer.Dial("tcp", addr)
+		if dialErr != nil {
+			return fmt.Errorf("failed to connect: %w", dialErr)
 		}
+		wrappedConn := &deadlineConn{
+			Conn:         rawConn,
+			readTimeout:  c.config.ReadTimeout,
+			writeTimeout: c.config.WriteTimeout,
+		}
+		tlsConn := tls.Client(wrappedConn, tlsConfig)
+		if hsErr := tlsConn.Handshake(); hsErr != nil {
+			tlsConn.Close()
+			return fmt.Errorf("TLS handshake failed: %w", hsErr)
+		}
+		conn = tlsConn
 
 	case SecurityStartTLS, SecurityNone:
-		// Connect plain first
+		// Connect plain first, wrap with deadline
 		dialer := &net.Dialer{Timeout: c.config.ConnectTimeout}
-		conn, err = dialer.Dial("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("failed to connect: %w", err)
+		rawConn, dialErr := dialer.Dial("tcp", addr)
+		if dialErr != nil {
+			return fmt.Errorf("failed to connect: %w", dialErr)
+		}
+		conn = &deadlineConn{
+			Conn:         rawConn,
+			readTimeout:  c.config.ReadTimeout,
+			writeTimeout: c.config.WriteTimeout,
 		}
 	}
 

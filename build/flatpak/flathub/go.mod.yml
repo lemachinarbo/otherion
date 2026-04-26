@@ -13,15 +13,15 @@
   type: archive
   url: https://proxy.golang.org/github.com/!microsoft/go-winio/@v/v0.6.2.zip
 - dest: vendor/github.com/ProtonMail/go-crypto
-  sha256: a7b989d1685dfb29d396d479f9922f30a2dcea9ba28f98535232493d631b3744
+  sha256: 70bbdc0f9e926738193aed968f7901efab41493752277c4c94c9b751aa55c42a
   strip-components: 3
   type: archive
-  url: https://proxy.golang.org/github.com/!proton!mail/go-crypto/@v/v1.1.5.zip
+  url: https://proxy.golang.org/github.com/!proton!mail/go-crypto/@v/v1.4.1.zip
 - dest: vendor/github.com/cloudflare/circl
-  sha256: 4497093cb7544d30e9d5d741a5e62c14fb8989c4271ca0a9a0a03a73570b3b83
+  sha256: 07400ed2808f2324faf1aeca9b5f5539de884d6820ad36453bcefbd96bfd7fc4
   strip-components: 3
   type: archive
-  url: https://proxy.golang.org/github.com/cloudflare/circl/@v/v1.3.7.zip
+  url: https://proxy.golang.org/github.com/cloudflare/circl/@v/v1.6.2.zip
 - dest: vendor/github.com/emersion/go-imap/v2
   sha256: bc383389d2072cc9ffa14ab3cd85a9e9d52857f84f06a4b0d6cd855d1ebf635b
   strip-components: 4
@@ -73,10 +73,10 @@
   type: archive
   url: https://proxy.golang.org/github.com/teamwork/tnef/@v/v0.0.0-20200108124832-7deabccfdb32.zip
 - dest: vendor/github.com/wailsapp/wails/v2
-  sha256: 1f599fcbff21b1d46c8a2c20f7da6cdf0913d616ac9f0fbdae07ce2e0cb9e877
+  sha256: 180adf48c80ff08a23a30964fd69f6fe205d7915e5903237b46236f605c0dfd6
   strip-components: 4
   type: archive
-  url: https://proxy.golang.org/github.com/wailsapp/wails/v2/@v/v2.11.0.zip
+  url: https://proxy.golang.org/github.com/wailsapp/wails/v2/@v/v2.12.0.zip
 - dest: vendor/github.com/zalando/go-keyring
   sha256: 8dea1c2777e7275317e5011f54cddb252c017a7e152558c4fcac84fa5101cf4e
   strip-components: 3

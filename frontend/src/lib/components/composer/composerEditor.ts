@@ -64,6 +64,27 @@ export const ExtendedColor = Color.extend({
 })
 
 /**
+ * Extended Image that preserves the data-original-src attribute.
+ * Used for blocked remote images: the placeholder SVG is in src,
+ * the original URL is in data-original-src for restoration on send.
+ */
+const ComposerImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      'data-original-src': {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.getAttribute('data-original-src'),
+        renderHTML: (attributes: Record<string, string>) => {
+          if (!attributes['data-original-src']) return {}
+          return { 'data-original-src': attributes['data-original-src'] }
+        },
+      },
+    }
+  },
+})
+
+/**
  * Extended Table extensions to preserve inline style attributes
  */
 const ExtendedTable = Table.extend({
@@ -150,7 +171,7 @@ export function createComposerEditor(
       Link.configure({
         openOnClick: false,
       }),
-      Image.configure({
+      ComposerImage.configure({
         inline: true,
         allowBase64: true,
       }),
@@ -177,19 +198,35 @@ export function createComposerEditor(
       },
       // Handle paste events for images
       handlePaste: (view, event) => {
+        // Try clipboardData.items first
         const items = event.clipboardData?.items
-        if (!items) return false
-
-        for (const item of items) {
-          if (item.type.startsWith('image/')) {
-            event.preventDefault()
-            const file = item.getAsFile()
-            if (file && handlers.onPasteImage) {
-              handlers.onPasteImage(file)
+        if (items) {
+          for (const item of items) {
+            if (item.type.startsWith('image/')) {
+              event.preventDefault()
+              const file = item.getAsFile()
+              if (file && handlers.onPasteImage) {
+                handlers.onPasteImage(file)
+              }
+              return true
             }
-            return true
           }
         }
+
+        // Fallback: try clipboardData.files (WebKitGTK may populate this instead of items)
+        const files = event.clipboardData?.files
+        if (files && files.length > 0) {
+          for (const file of Array.from(files)) {
+            if (file.type.startsWith('image/')) {
+              event.preventDefault()
+              if (handlers.onPasteImage) {
+                handlers.onPasteImage(file)
+              }
+              return true
+            }
+          }
+        }
+
         return false
       },
       // Handle drop events for files (images inline, others as attachments)

@@ -161,7 +161,9 @@
     "failedToLoadMessages": "載入郵件失敗。",
     "noContent": "無可用內容",
     "downloadingContent": "正在下載郵件內容...",
+    "copy": "複製",
     "copyLink": "複製連結",
+    "selectAll": "全選",
     "remoteImagesBlocked": "遠端圖片已基於私隱被封鎖。",
     "loadImages": "載入圖片",
     "alwaysLoad": "永遠載入",
@@ -234,6 +236,8 @@
     "savedLocally": "已儲存至本機",
     "savedLocallyOffline": "已儲存至本機（離線）",
     "failedToInsertImage": "插入圖片失敗",
+    "imageTooLarge": "圖片過大（上限 10 MB）。請改為一般附件。",
+    "attachmentTooLarge": "檔案過大（上限 100 MB）。",
     "failedToAttachFiles": "附加檔案失敗",
     "failedToOpenComposer": "開啟撰寫視窗失敗",
     "selectSenderIdentity": "請選擇寄件身分",
@@ -271,7 +275,8 @@
     "markAsUnread": "標記為未讀",
     "markAllAsRead": "全部標記為已讀",
     "markAllAsUnread": "全部標記為未讀",
-    "noFoldersAvailable": "沒有可用的資料夾"
+    "noFoldersAvailable": "沒有可用的資料夾",
+    "searchFolders": "搜尋資料夾..."
   },
   "toast": {
     "archived": "已封存",
@@ -415,6 +420,8 @@
     "selectTheme": "選擇佈景主題",
     "messageListDensity": "郵件清單密度",
     "messageListDensityHelp": "調整郵件清單中的間距和文字大小",
+    "accentBarUnread": "未讀郵件標記線",
+    "accentBarUnreadHelp": "在未讀郵件左側顯示標記線，方便辨識。",
     "selectDensity": "選擇密度",
     "readReceipts": "讀取回條",
     "readReceiptPolicy": "當有人要求讀取回條時",
@@ -451,9 +458,9 @@
     "quitNow": "立即退出",
     "restartLater": "稍後",
     "alwaysLoadImages": "總是載入遠端圖片",
-    "alwaysLoadImagesHelp": "停用所有電子郵件嘅圖片封鎖。遠端圖片將自動載入。",
+    "alwaysLoadImagesHelp": "停用所有電子郵件的圖片封鎖。遠端圖片將自動載入。",
     "alwaysLoadImagesWarningTitle": "私隱與安全風險",
-    "alwaysLoadImagesWarningDescription": "自動載入遠端圖片可能會暴露你嘅 IP 地址、確認你已讀取郵件，並允許寄件者追蹤你。確定要停用圖片封鎖嗎？",
+    "alwaysLoadImagesWarningDescription": "自動載入遠端圖片可能會暴露您的 IP 地址、確認您已讀取郵件，並允許寄件者追蹤您。確定要停用圖片封鎖嗎？",
     "disable": "停用"
   },
   "settingsAccounts": {
@@ -474,6 +481,7 @@
   "account": {
     "addTitle": "新增電子郵件帳戶",
     "editTitle": "編輯帳戶",
+    "editSharedMailboxTitle": "編輯共用信箱",
     "addDescription": "連接您的電子郵件帳戶以開始接收郵件。",
     "editDescription": "管理您的電子郵件帳戶設定、身分和簽名。",
     "general": "一般",
@@ -505,6 +513,12 @@
     "oauthConnected": "已透過 OAuth 連接",
     "syncInterval": "同步間隔",
     "syncIntervalHelp": "檢查新郵件的頻率",
+    "folderSync": "資料夾同步訂閱",
+    "folderSyncHelp": "控制核心資料夾以外要自動同步的資料夾。",
+    "manageFolderSync": "管理資料夾同步",
+    "manageFolderSyncHelp": "啟用後可選擇要自動同步的資料夾。停用時僅同步收件匣、草稿和已寄出。",
+    "syncAllFolders": "同步所有資料夾",
+    "alwaysSynced": "一律同步",
     "folderMapping": "資料夾對應",
     "folderMappingHelp": "將 IMAP 資料夾對應至特殊資料夾類型",
     "autoDetect": "自動偵測",
@@ -660,7 +674,17 @@
     "addSeparator": "在簽名前加入分隔線",
     "saveIdentityChanges": "儲存變更",
     "saveFailed": "儲存身分失敗。",
-    "addEmailAddressButton": "新增電子郵件地址"
+    "addEmailAddressButton": "新增電子郵件地址",
+    "sharedMailboxes": "共用信箱",
+    "sharedMailboxesHelp": "新增您有權存取的 Microsoft 365 共用信箱。",
+    "addSharedMailbox": "新增共用信箱",
+    "noSharedMailboxes": "尚未設定共用信箱。",
+    "sharedMailboxEmail": "共用信箱電子郵件",
+    "sharedMailboxDisplayName": "顯示名稱",
+    "sharedMailboxAdded": "共用信箱已新增。",
+    "sharedMailboxRemoved": "共用信箱已移除。",
+    "failedToAddSharedMailbox": "新增共用信箱失敗",
+    "failedToDeleteSharedMailbox": "移除共用信箱失敗。"
   },
   "security": {
     "smime": "S/MIME",
@@ -795,7 +819,10 @@
     "certImportFailed": "憑證匯入失敗。請檢查檔案格式與密碼。",
     "keyImportFailed": "金鑰匯入失敗。請檢查檔案格式與密碼短語。",
     "recipientCertImportFailed": "收件人憑證匯入失敗。請檢查檔案格式。",
-    "recipientKeyImportFailed": "收件人金鑰匯入失敗。請檢查檔案格式。"
+    "recipientKeyImportFailed": "收件人金鑰匯入失敗。請檢查檔案格式。",
+    "berConversionTitle": "舊版憑證格式",
+    "berConversionMessage": "此憑證使用舊版 BER 編碼，匯入前需要轉換為標準 DER 格式。轉換過程不會改變憑證資料。是否繼續？",
+    "berConversionConfirm": "轉換並匯入"
   },
   "contactSource": {
     "title": "聯絡人來源",

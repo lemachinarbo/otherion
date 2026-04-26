@@ -8,6 +8,8 @@
   // @ts-ignore - Wails runtime for events
   import { EventsOn, EventsOff } from '../../../../wailsjs/runtime/runtime.js'
   import { type ComposerApi, COMPOSER_API_KEY, createMainWindowApi } from '$lib/composerApi'
+  import { isImageAllowedSync } from '$lib/stores/imageAllowlist.svelte'
+  import { getAlwaysLoadImages } from '$lib/stores/settings.svelte'
   
   // Attachment type from backend
   interface ComposerAttachment {
@@ -30,6 +32,7 @@
   import ComposerAttachmentList from './ComposerAttachmentList.svelte'
   import {
     addParagraphStyles,
+    stripParagraphStyles,
     base64ToBytes,
     htmlToPlainText,
     parseFileUris,
@@ -76,9 +79,11 @@
     onCloseHandled?: () => void
     /** Callback when recipient or subject changes (for dynamic window title) */
     onTitleChange?: (to: string, subject: string) => void
+    /** Whether remote images were loaded in the viewer before reply/forward */
+    imagesLoaded?: boolean
   }
 
-  let { accountId, initialMessage = null, draftId = null, messageId = null, onClose, onSent, api: propApi, isDetached = false, closeRequested = false, onCloseHandled, onTitleChange }: Props = $props()
+  let { accountId, initialMessage = null, draftId = null, messageId = null, onClose, onSent, api: propApi, isDetached = false, closeRequested = false, onCloseHandled, onTitleChange, imagesLoaded = false }: Props = $props()
 
   // Get API from context, props, or create default main window API
   const contextApi = getContext<ComposerApi | undefined>(COMPOSER_API_KEY)
@@ -334,6 +339,15 @@
   
   // 10-second debounce like Geary
   const DRAFT_SAVE_DELAY = 10000
+
+  // Max inline image size (10 MB) — larger files should be added as regular attachments
+  const MAX_INLINE_IMAGE_SIZE = 10 * 1024 * 1024
+
+  // Whether remote images are blocked in the composer's quoted content
+  let composerImagesBlocked = $state(false)
+
+  // Max attachment size (100 MB) — server enforces its own limits for smaller caps
+  const MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024
   
   // Confirmation dialogs state
   let showEmptySubjectDialog = $state(false)
@@ -393,6 +407,71 @@
            subject.trim() !== '' || bodyText !== '' || attachments.length > 0
   }
 
+  // Collect any images in the editor DOM that aren't tracked in inlineImages.
+  // WebKitGTK doesn't expose pasted screenshots via clipboardData, so TipTap's
+  // default handler inserts them with a webkit-fake-url:// src. This function
+  // extracts the pixel data via canvas and registers them for CID conversion.
+  function collectUnregisteredInlineImages(html: string): string {
+    const editorEl = editor?.view?.dom
+    if (!editorEl) return html
+
+    const imgs = editorEl.querySelectorAll('img')
+    let result = html
+
+    for (const img of imgs) {
+      const src = img.getAttribute('src') || ''
+
+      // Skip tracked, cid:, http(s):, and blocked remote images
+      if (src.startsWith('cid:') || src.startsWith('http://') || src.startsWith('https://')) continue
+      if (img.hasAttribute('data-original-src')) continue
+      if (inlineImages.some(i => i.dataUrl === src)) continue
+
+      // data: URLs — parse and register directly
+      if (src.startsWith('data:')) {
+        const match = src.match(/^data:([^;]+);base64,(.+)$/)
+        if (!match) continue
+        const cid = generateCID()
+        inlineImages = [...inlineImages, {
+          cid,
+          dataUrl: src,
+          contentType: match[1],
+          data: match[2],
+          filename: `pasted-image${inlineImageCounter}.${match[1].split('/')[1] || 'png'}`,
+        }]
+        continue
+      }
+
+      // webkit-fake-url://, blob:, etc. — extract via canvas
+      if (!img.complete || img.naturalWidth === 0) continue
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) continue
+        ctx.drawImage(img, 0, 0)
+        const dataUrl = canvas.toDataURL('image/png')
+        const base64Data = dataUrl.split(',')[1]
+
+        // Replace non-standard src with data URL in the HTML string
+        result = result.replaceAll(src, dataUrl)
+
+        const cid = generateCID()
+        inlineImages = [...inlineImages, {
+          cid,
+          dataUrl,
+          contentType: 'image/png',
+          data: base64Data,
+          filename: `pasted-image${inlineImageCounter}.png`,
+        }]
+      } catch {
+        continue
+      }
+    }
+
+    return result
+  }
+
   // Convert HTML with data URLs to use CID references for inline images
   function convertDataUrlsToCid(html: string): string {
     let result = html
@@ -419,27 +498,40 @@
       htmlContent = ''  // No HTML version when composing in plain text
     } else {
       // In rich text mode, we have both
-      // Add inline margin:0 to paragraphs for single-spacing in recipients' email clients,
-      // then convert data URLs to CID references for inline images
-      htmlContent = convertDataUrlsToCid(addParagraphStyles(editor?.getHTML() || ''))
+      // Collect any untracked pasted images (WebKitGTK webkit-fake-url, etc.),
+      // add paragraph styles for email clients, then convert data URLs to CID references
+      const rawHtml = collectUnregisteredInlineImages(editor?.getHTML() || '')
+      htmlContent = convertDataUrlsToCid(addParagraphStyles(rawHtml))
       textContent = editor?.getText() || ''
     }
 
+    // Restore blocked remote images for sending — replace placeholder with original URL
+    htmlContent = htmlContent.replace(
+      /<img([^>]*)\sdata-original-src="([^"]+)"([^>]*)>/gi,
+      (match, _before, originalSrc, _after) => {
+        return match
+          .replace(/src="[^"]*"/, `src="${originalSrc}"`)
+          .replace(/\s*data-original-src="[^"]*"/, '')
+      }
+    )
+
     // Convert ComposerAttachment to smtp.Attachment format (regular attachments)
+    // Use content_base64 (string) instead of content (number[]) to avoid
+    // pathologically slow JSON serialization of large byte arrays through Wails RPC.
     const smtpAttachments: smtp.Attachment[] = attachments.map(att => new smtp.Attachment({
       filename: att.filename,
       content_type: att.contentType,
-      content: base64ToBytes(att.data),
+      content_base64: att.data,
       content_id: '',
       inline: false,
     }))
-    
+
     // Add inline images as inline attachments with Content-ID
     for (const img of inlineImages) {
       smtpAttachments.push(new smtp.Attachment({
         filename: img.filename,
         content_type: img.contentType,
-        content: base64ToBytes(img.data),
+        content_base64: img.data,
         content_id: img.cid,
         inline: true,
       }))
@@ -543,6 +635,20 @@
       isSaving = false
       resolveSaving!()
     }
+  }
+
+  // Load blocked remote images in the composer editor
+  function loadComposerImages() {
+    if (!editor) return
+    const imgs = editor.view.dom.querySelectorAll('img[data-original-src]')
+    imgs.forEach(img => {
+      const originalSrc = img.getAttribute('data-original-src')
+      if (originalSrc) {
+        img.setAttribute('src', originalSrc)
+        img.removeAttribute('data-original-src')
+      }
+    })
+    composerImagesBlocked = false
   }
 
   // Delete the current draft
@@ -669,8 +775,16 @@
       const identity = identities.find(i => i.id === selectedIdentityId)
       if (identity) {
         const content = editor?.getHTML() || ''
-        // Don't append if signature marker already exists (draft already has signature)
-        if (!hasSignatureMarker(content)) {
+        // Don't append if signature marker already exists in the user's compose area.
+        // Only check content before the quoted section — markers inside quoted history
+        // (from previous replies with signatures) should not prevent injection.
+        const quoteIdx = content.indexOf('<blockquote')
+        const wroteIdx = content.search(/wrote:\s*(<br[^>]*>)?\s*<\/p>/i)
+        const fwdIdx = content.indexOf('---------- Forwarded message ----------')
+        const boundaries = [quoteIdx, wroteIdx, fwdIdx].filter(i => i > -1)
+        const quoteBoundary = boundaries.length > 0 ? Math.min(...boundaries) : content.length
+        const preQuoteContent = content.substring(0, quoteBoundary)
+        if (!hasSignatureMarker(preQuoteContent)) {
           appendSignatureForIdentity(identity)
         }
       }
@@ -882,12 +996,13 @@
     inReplyTo = initialMessage.in_reply_to
     references = initialMessage.references || []
 
-    // Restore attachments and inline images from draft
+    // Restore attachments and inline images from draft/reply/forward
     // Go []byte is serialized as base64 string via JSON, but TS type says number[]
+    // content_base64 is used for efficient Wails RPC transfer (inline images in replies/forwards)
     let htmlBody = initialMessage.html_body || ''
     if (initialMessage.attachments?.length > 0) {
       for (const att of initialMessage.attachments) {
-        const base64Data = att.content as unknown as string
+        const base64Data = att.content_base64 || (att.content as unknown as string)
         if (!base64Data) continue
 
         if (att.inline && att.content_id) {
@@ -916,10 +1031,22 @@
     }
 
     // Set editor content (with restored data URLs for inline images)
+    // Strip email-client paragraph styles so TipTap doesn't double-space empty lines
     if (editor && htmlBody) {
-      editor.commands.setContent(htmlBody)
+      editor.commands.setContent(stripParagraphStyles(htmlBody))
       // Move cursor to beginning (before the quoted content)
       editor.commands.focus('start')
+    }
+
+    // Check for blocked remote images in quoted content.
+    // If the sender is allowlisted or always-load is enabled, unblock immediately.
+    if (htmlBody.includes('data-original-src')) {
+      composerImagesBlocked = true
+      const senderEmail = ((initialMessage.from as any)?.address || (initialMessage.from as any)?.email || '').toLowerCase()
+      if (getAlwaysLoadImages() || imagesLoaded || (senderEmail && isImageAllowedSync(senderEmail))) {
+        // Use setTimeout to ensure editor has rendered the content first
+        setTimeout(() => loadComposerImages(), 0)
+      }
     }
 
     // Restore S/MIME toggles from draft
@@ -1007,6 +1134,9 @@
       clearTimeout(saveTimeoutId)
       saveTimeoutId = null
     }
+
+    // Wait for any in-flight draft save to complete before sending
+    await savingComplete
 
     sending = true
 
@@ -1259,6 +1389,14 @@
   
   // Handle an inline image file (from paste or drop)
   async function handleInlineImageFile(file: File) {
+    if (file.size > MAX_INLINE_IMAGE_SIZE) {
+      addToast({
+        type: 'error',
+        message: $_('composer.imageTooLarge'),
+      })
+      return
+    }
+
     try {
       const dataUrl = await readFileAsDataUrl(file)
       const cid = generateCID()
@@ -1299,6 +1437,11 @@
   
   // Handle a non-image File dropped on the editor (add as attachment)
   async function handleDroppedFile(file: File) {
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      addToast({ type: 'error', message: $_('composer.attachmentTooLarge') })
+      return
+    }
+
     try {
       const data = await readFileAsBase64(file)
       attachments = [...attachments, {
@@ -1322,6 +1465,15 @@
         if (!att) continue
 
         if (att.contentType.startsWith('image/')) {
+          // Check size before inserting inline
+          const imageBytes = Math.ceil((att.data.length * 3) / 4) // Estimate decoded size from base64
+          if (imageBytes > MAX_INLINE_IMAGE_SIZE) {
+            addToast({
+              type: 'error',
+              message: $_('composer.imageTooLarge'),
+            })
+            continue
+          }
           // Insert as inline image
           const dataUrl = `data:${att.contentType};base64,${att.data}`
           const cid = generateCID()
@@ -1336,6 +1488,10 @@
           continue
         }
         // Add as regular attachment
+        if (att.size > MAX_ATTACHMENT_SIZE) {
+          addToast({ type: 'error', message: $_('composer.attachmentTooLarge') })
+          continue
+        }
         attachments = [...attachments, {
           filename: att.filename,
           contentType: att.contentType,
@@ -1371,6 +1527,10 @@
       try {
         const newAttachments: typeof attachments = []
         for (const file of Array.from(fileList)) {
+          if (file.size > MAX_ATTACHMENT_SIZE) {
+            addToast({ type: 'error', message: $_('composer.attachmentTooLarge') })
+            continue
+          }
           const dataUrl = await readFileAsDataUrl(file)
           const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
           if (!matches) continue
@@ -1428,6 +1588,10 @@
     if (files && files.length > 0) {
       const newAttachments: ComposerAttachment[] = []
       for (const file of Array.from(files)) {
+        if (file.size > MAX_ATTACHMENT_SIZE) {
+          addToast({ type: 'error', message: $_('composer.attachmentTooLarge') })
+          continue
+        }
         try {
           const data = await readFileAsBase64(file)
           newAttachments.push({
@@ -1459,6 +1623,10 @@
           try {
             const att = await api.readFileAsAttachment(filePath)
             if (!att) continue
+            if (att.size > MAX_ATTACHMENT_SIZE) {
+              addToast({ type: 'error', message: $_('composer.attachmentTooLarge') })
+              continue
+            }
             attachments = [...attachments, {
               filename: att.filename,
               contentType: att.contentType,
@@ -1747,6 +1915,20 @@
       onInsertImage={insertImage}
     />
 
+    <!-- Remote images blocked bar -->
+    {#if composerImagesBlocked}
+      <div class="flex items-center gap-2 px-3 py-2 mx-2 mt-2 rounded-md bg-yellow-500/10 border border-yellow-500/30 text-sm">
+        <Icon icon="mdi:image-off" class="w-4 h-4 text-yellow-600 flex-shrink-0" />
+        <span class="text-yellow-700 dark:text-yellow-400">{$_('viewer.remoteImagesBlocked')}</span>
+        <button
+          class="ml-auto px-2 py-1 text-xs font-medium rounded bg-yellow-600 text-white hover:bg-yellow-700 transition-colors"
+          onclick={loadComposerImages}
+        >
+          {$_('viewer.loadImages')}
+        </button>
+      </div>
+    {/if}
+
     <!-- Editor -->
     <div class="flex-1 overflow-auto bg-white dark:bg-zinc-900">
       {#if isPlainTextMode}
@@ -1895,6 +2077,7 @@
   /* Zero-margin paragraphs so Enter looks like a single line break */
   :global(.composer-editor p) {
     margin: 0;
+    line-height: 1.25;
   }
 
   :global(.ProseMirror p.is-editor-empty:first-child::before) {

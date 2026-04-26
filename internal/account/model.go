@@ -28,6 +28,9 @@ type Account struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
 
+	// Shared mailbox support
+	SharedMailboxParentID string `json:"sharedMailboxParentId,omitempty"` // Parent account ID (set for Microsoft shared mailboxes)
+
 	// IMAP settings
 	IMAPHost     string       `json:"imapHost"`
 	IMAPPort     int          `json:"imapPort"`
@@ -48,8 +51,10 @@ type Account struct {
 	Color      string `json:"color"` // Hex color for account identification in unified inbox
 
 	// Sync settings
-	SyncPeriodDays int `json:"syncPeriodDays"`
-	SyncInterval   int `json:"syncInterval"` // Minutes between polls (0 = manual only)
+	SyncPeriodDays int  `json:"syncPeriodDays"`
+	SyncInterval   int  `json:"syncInterval"`   // Minutes between polls (0 = manual only)
+	SyncAllFolders     bool `json:"syncAllFolders"`     // Sync all folders instead of just subscribed ones
+	SyncFoldersEnabled bool `json:"syncFoldersEnabled"` // User opted into folder sync management
 
 	// Read receipt settings
 	// Controls whether to request read receipts when sending emails
@@ -152,6 +157,8 @@ type AccountConfig struct {
 	DisplayName string `json:"displayName"` // Name shown to email recipients
 	Email       string `json:"email"`
 
+	SharedMailboxParentID string `json:"sharedMailboxParentId,omitempty"`
+
 	IMAPHost     string       `json:"imapHost"`
 	IMAPPort     int          `json:"imapPort"`
 	IMAPSecurity SecurityType `json:"imapSecurity"`
@@ -166,8 +173,10 @@ type AccountConfig struct {
 
 	Color string `json:"color"` // Hex color for account identification
 
-	SyncPeriodDays int `json:"syncPeriodDays"`
-	SyncInterval   int `json:"syncInterval"` // Minutes between polls (0 = manual only)
+	SyncPeriodDays int  `json:"syncPeriodDays"`
+	SyncInterval   int  `json:"syncInterval"`   // Minutes between polls (0 = manual only)
+	SyncAllFolders     bool `json:"syncAllFolders"`     // Sync all folders instead of just subscribed ones
+	SyncFoldersEnabled bool `json:"syncFoldersEnabled"` // User opted into folder sync management
 
 	// Read receipt settings
 	ReadReceiptRequestPolicy string `json:"readReceiptRequestPolicy"`

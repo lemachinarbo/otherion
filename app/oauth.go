@@ -59,6 +59,7 @@ func (a *App) StartOAuthFlow(provider string) error {
 
 	// Wait for callback in background
 	go func() {
+		defer recoverPanic("app.oauth", "OAuth callback")
 		tokens, email, err := a.oauth2Manager.WaitForCallback(a.ctx)
 		if err != nil {
 			log.Error().Err(err).Str("provider", provider).Msg("OAuth callback failed")
@@ -283,6 +284,14 @@ func (a *App) SavePendingOAuthTokens(accountID string) error {
 
 	if err := a.credStore.SetOAuthTokens(accountID, tokens); err != nil {
 		return fmt.Errorf("failed to store OAuth tokens: %w", err)
+	}
+
+	// Propagate new tokens to any shared mailboxes linked to this account
+	sharedMailboxes, _ := a.accountStore.ListBySharedMailboxParent(accountID)
+	for _, sm := range sharedMailboxes {
+		if smErr := a.credStore.SetOAuthTokens(sm.ID, tokens); smErr != nil {
+			log.Warn().Err(smErr).Str("sharedID", sm.ID).Msg("Failed to propagate tokens to shared mailbox")
+		}
 	}
 
 	log.Info().

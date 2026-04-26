@@ -934,7 +934,7 @@ func (s *Store) GetMessagesWithoutBody(folderID string, limit int, sinceDate tim
 			WHERE folder_id = ? AND (
 				body_fetched = 0 OR
 				(body_fetched = 1 AND smime_encrypted = 0 AND pgp_encrypted = 0 AND (body_text IS NULL OR body_text = '') AND (body_html IS NULL OR body_html = ''))
-			) AND date >= ?
+			) AND (date >= ? OR date < '1970-01-01')
 			ORDER BY date DESC
 			LIMIT ?
 		`
@@ -990,7 +990,7 @@ func (s *Store) GetMessagesWithoutBodyAndSize(folderID string, limit int, sinceD
 			WHERE folder_id = ? AND (
 				body_fetched = 0 OR
 				(body_fetched = 1 AND smime_encrypted = 0 AND pgp_encrypted = 0 AND (body_text IS NULL OR body_text = '') AND (body_html IS NULL OR body_html = ''))
-			) AND date >= ?
+			) AND (date >= ? OR date < '1970-01-01')
 			ORDER BY date DESC
 			LIMIT ?
 		`
@@ -1035,7 +1035,7 @@ func (s *Store) CountMessagesWithoutBody(folderID string, sinceDate time.Time) (
 			`SELECT COUNT(*) FROM messages WHERE folder_id = ? AND (
 				body_fetched = 0 OR
 				(body_fetched = 1 AND smime_encrypted = 0 AND pgp_encrypted = 0 AND (body_text IS NULL OR body_text = '') AND (body_html IS NULL OR body_html = ''))
-			) AND date >= ?`,
+			) AND (date >= ? OR date < '1970-01-01')`,
 			folderID, sinceDate,
 		).Scan(&count)
 	}
@@ -1909,6 +1909,42 @@ func (s *Store) DeleteTempUIDs(folderID string) error {
 		return fmt.Errorf("failed to delete temp UID messages: %w", err)
 	}
 	return nil
+}
+
+// GetIDsByMessageIDs finds local DB message IDs by RFC822 Message-ID header and folder.
+// Only returns messages with positive UIDs (excludes temp rows from in-flight moves).
+func (s *Store) GetIDsByMessageIDs(accountID, folderID string, rfc822MessageIDs []string) ([]string, error) {
+	if len(rfc822MessageIDs) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(rfc822MessageIDs))
+	args := []interface{}{accountID, folderID}
+	for i, mid := range rfc822MessageIDs {
+		placeholders[i] = "?"
+		args = append(args, mid)
+	}
+
+	query := fmt.Sprintf(
+		"SELECT id FROM messages WHERE account_id = ? AND folder_id = ? AND uid > 0 AND message_id IN (%s)",
+		strings.Join(placeholders, ", "),
+	)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query messages: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan message ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // DeleteBatch deletes multiple messages by their IDs

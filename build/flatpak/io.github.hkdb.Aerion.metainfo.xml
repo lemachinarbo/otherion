@@ -128,6 +128,51 @@
   </provides>
 
   <releases>
+    <release version="0.1.39" date="2026-04-27">
+      <description>
+        
+        <p>As of 2026-04-26, Aerion is CASA Tier 2 certified and verified by Google so oAuth2 signin will no longer be blocked.</p>
+
+        <p>v0.1.39 is a major milestone that includes some remaining originally planned basic features and a substantial amount of bug fixes/refinements focused on making existing features much more reliable/stable. It will serve as a solid foundation for us to continue the further development of this mail client.</p>
+
+        <ul>
+          <li>Added image block logic to composer to avoid leaks</li>
+          <li>Added folder subscription for auto sync - #83</li>
+          <li>Added optional accent bar for unread messages - #92</li>
+          <li>Added copy text in viewer context menu - #77</li>
+          <li>Added select all in viewer context menu - #77</li>
+          <li>Enable native context menu in composer - #77</li>
+          <li>Added Shared Mailbox support for Microsoft 365 - #93</li>
+          <li>Improved copy/move to folder selection dialog</li>
+          <li>Improved invalid encoding handling</li>
+          <li>Fixed another ghost message issue</li>
+          <li>Fixed invalid e-mail date hang</li>
+          <li>Fixed identity switch on replies and forwards</li>
+          <li>Fixed draft save and send race condition</li>
+          <li>Added proper smtp connect timeout</li>
+          <li>Added proper IMAP STARTTLS connect timeout</li>
+          <li>Fixed inefficient serilization for inline images and attachments</li>
+          <li>Added inline image and attachment size limit</li>
+          <li>Fixed inline images on replies and forwards</li>
+          <li>Fixed reply/forward signature placement</li>
+          <li>Added AttachConsole to for Windows builds for debug output</li>
+          <li>Fixed murena.io CardDav - #86</li>
+          <li>Fixed some HK translation</li>
+          <li>Fixed non-UTF filename attachment open and download</li>
+          <li>Fixed save to sent folder behavior - #98</li>
+          <li>Improve composer formatting</li>
+          <li>Fixed unchecked rand.Read() in Cryptographic Code</li>
+          <li>Backfilled missing DB error handling</li>
+          <li>Added proper panic recovery</li>
+          <li>Fixed pasted inline image sending</li>
+          <li>Fixed undo delete regression</li>
+          <li>Fixed name and subject preview decoding - #104</li>
+          <li>Fixed provider icons consistency - #102</li>
+          <li>Added better pgp and s/mime error feedback</li>
+          <li>Added a wider range of PGP keys and S/MIME certs support - #107</li> 
+        </ul>
+      </description>
+    </release>
     <release version="0.1.38" date="2026-03-22">
       <description>
         <ul>

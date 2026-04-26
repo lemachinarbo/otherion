@@ -27,6 +27,8 @@ export function AddContactSource(arg1:carddav.SourceConfig):Promise<carddav.Sour
 
 export function AddImageAllowlist(arg1:string,arg2:string):Promise<void>;
 
+export function AddMicrosoftSharedMailbox(arg1:string,arg2:string,arg3:string):Promise<account.Account>;
+
 export function AddPGPKeyServer(arg1:string):Promise<void>;
 
 export function Archive(arg1:Array<string>):Promise<void>;
@@ -97,7 +99,11 @@ export function FetchMessageBody(arg1:string):Promise<message.Message>;
 
 export function FetchServerMessage(arg1:string,arg2:string,arg3:number):Promise<message.Message>;
 
+export function FindLocalMessageIDs(arg1:string,arg2:string,arg3:Array<string>):Promise<Array<string>>;
+
 export function ForceSyncFolder(arg1:string,arg2:string):Promise<void>;
+
+export function GetAccentBarUnread():Promise<boolean>;
 
 export function GetAccount(arg1:string):Promise<account.Account>;
 
@@ -187,6 +193,8 @@ export function GetMessageSource(arg1:string):Promise<string>;
 
 export function GetMessages(arg1:string,arg2:string,arg3:number,arg4:number):Promise<Array<message.MessageHeader>>;
 
+export function GetMicrosoftSharedMailboxes(arg1:string):Promise<Array<account.Account>>;
+
 export function GetNativeTitleBar():Promise<boolean>;
 
 export function GetOAuthStatus(arg1:string):Promise<app.OAuthStatus>;
@@ -259,6 +267,8 @@ export function ImportRecipientPGPKey(arg1:string,arg2:string):Promise<void>;
 
 export function ImportSMIMECertificateFromPath(arg1:string,arg2:string,arg3:string):Promise<smime.ImportResult>;
 
+export function ImportSMIMECertificateFromPathBER(arg1:string,arg2:string,arg3:string):Promise<smime.ImportResult>;
+
 export function InitiateShutdown():Promise<void>;
 
 export function IsFTSIndexComplete(arg1:string):Promise<boolean>;
@@ -304,6 +314,8 @@ export function MarkAsSpam(arg1:Array<string>):Promise<boolean>;
 export function MarkAsUnread(arg1:Array<string>):Promise<void>;
 
 export function MoveLocalMessages(arg1:Array<string>,arg2:string):Promise<void>;
+
+export function MoveMessagesToFolder(arg1:Array<string>,arg2:string):Promise<void>;
 
 export function MoveToFolder(arg1:Array<string>,arg2:string):Promise<void>;
 
@@ -381,6 +393,8 @@ export function SendMessage(arg1:string,arg2:smtp.ComposeMessage):Promise<void>;
 
 export function SendReadReceipt(arg1:string,arg2:string):Promise<void>;
 
+export function SetAccentBarUnread(arg1:boolean):Promise<void>;
+
 export function SetAccountEnabled(arg1:string,arg2:boolean):Promise<void>;
 
 export function SetAddressbookEnabled(arg1:string,arg2:boolean):Promise<void>;
@@ -439,6 +453,10 @@ export function StartContactsOnlyOAuthFlow(arg1:string):Promise<void>;
 
 export function StartOAuthFlow(arg1:string):Promise<void>;
 
+export function SubscribeAllFolders(arg1:string):Promise<void>;
+
+export function SubscribeFolder(arg1:string,arg2:string):Promise<void>;
+
 export function SyncAccountComplete(arg1:string):Promise<void>;
 
 export function SyncAllComplete():Promise<void>;
@@ -466,6 +484,8 @@ export function Trash(arg1:Array<string>):Promise<boolean>;
 export function Undo():Promise<string>;
 
 export function Unstar(arg1:Array<string>):Promise<void>;
+
+export function UnsubscribeFolder(arg1:string,arg2:string):Promise<void>;
 
 export function UpdateAccount(arg1:string,arg2:account.AccountConfig):Promise<account.Account>;
 

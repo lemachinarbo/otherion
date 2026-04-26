@@ -144,12 +144,25 @@ func (c *Client) Connect() error {
 		c.client = imapclient.New(wrappedConn, options)
 
 	case SecurityStartTLS:
-		// Connect plain first, then upgrade (port 143)
+		// Connect plain first, wrap with deadline, then upgrade to TLS (port 143)
+		rawConn, dialErr := dialer.Dial("tcp", addr)
+		if dialErr != nil {
+			return fmt.Errorf("failed to connect: %w", dialErr)
+		}
+
+		// Wrap with deadline connection for read/write timeouts
+		wrappedConn := &deadlineConn{
+			Conn:         rawConn,
+			readTimeout:  c.config.ReadTimeout,
+			writeTimeout: c.config.WriteTimeout,
+		}
+
 		// Use custom TLSConfig if provided (for certificate TOFU)
 		if c.config.TLSConfig != nil {
 			options.TLSConfig = c.config.TLSConfig
 		}
-		c.client, err = imapclient.DialStartTLS(addr, options)
+
+		c.client, err = imapclient.NewStartTLS(wrappedConn, options)
 		if err != nil {
 			return fmt.Errorf("failed to connect with STARTTLS: %w", err)
 		}
@@ -442,6 +455,57 @@ func (c *Client) ListMailboxes() ([]*Mailbox, error) {
 	c.log.Debug().Int("count", len(mailboxes)).Msg("Listed mailboxes")
 
 	return mailboxes, nil
+}
+
+// Subscribe sends an IMAP SUBSCRIBE command for the given mailbox.
+func (c *Client) Subscribe(mailbox string) error {
+	if c.client == nil {
+		return fmt.Errorf("not connected")
+	}
+	if err := c.client.Subscribe(mailbox).Wait(); err != nil {
+		return fmt.Errorf("failed to subscribe to %s: %w", mailbox, err)
+	}
+	c.log.Debug().Str("mailbox", mailbox).Msg("Subscribed to mailbox")
+	return nil
+}
+
+// Unsubscribe sends an IMAP UNSUBSCRIBE command for the given mailbox.
+func (c *Client) Unsubscribe(mailbox string) error {
+	if c.client == nil {
+		return fmt.Errorf("not connected")
+	}
+	if err := c.client.Unsubscribe(mailbox).Wait(); err != nil {
+		return fmt.Errorf("failed to unsubscribe from %s: %w", mailbox, err)
+	}
+	c.log.Debug().Str("mailbox", mailbox).Msg("Unsubscribed from mailbox")
+	return nil
+}
+
+// ListSubscribedMailboxes returns only the subscribed mailboxes.
+func (c *Client) ListSubscribedMailboxes() (map[string]bool, error) {
+	if c.client == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	c.log.Debug().Msg("Listing subscribed mailboxes")
+
+	listCmd := c.client.List("", "*", &imap.ListOptions{SelectSubscribed: true})
+
+	subscribed := make(map[string]bool)
+	for {
+		mbox := listCmd.Next()
+		if mbox == nil {
+			break
+		}
+		subscribed[mbox.Mailbox] = true
+	}
+
+	if err := listCmd.Close(); err != nil {
+		return nil, fmt.Errorf("failed to list subscribed mailboxes: %w", err)
+	}
+
+	c.log.Debug().Int("count", len(subscribed)).Msg("Listed subscribed mailboxes")
+	return subscribed, nil
 }
 
 // determineFolderType determines the folder type from name and attributes

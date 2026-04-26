@@ -34,10 +34,17 @@ func nullableString(s string) interface{} {
 	return s
 }
 
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // getNextColor returns the next color in the rotation based on account count
 func (s *Store) getNextColor() string {
 	var count int
-	s.db.QueryRow("SELECT COUNT(*) FROM accounts").Scan(&count)
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM accounts").Scan(&count)
 	return defaultColors[count%len(defaultColors)]
 }
 
@@ -64,7 +71,9 @@ func (s *Store) Create(config *AccountConfig) (*Account, error) {
 
 	// Get next order index
 	var maxOrder int
-	s.db.QueryRow("SELECT COALESCE(MAX(order_index), -1) FROM accounts").Scan(&maxOrder)
+	if err := s.db.QueryRow("SELECT COALESCE(MAX(order_index), -1) FROM accounts").Scan(&maxOrder); err != nil {
+		return nil, fmt.Errorf("failed to get max account order: %w", err)
+	}
 
 	// Auto-assign color if not provided
 	color := config.Color
@@ -90,6 +99,9 @@ func (s *Store) Create(config *AccountConfig) (*Account, error) {
 		Color:                    color,
 		SyncPeriodDays:           config.SyncPeriodDays,
 		SyncInterval:             config.SyncInterval,
+		SyncAllFolders:           config.SyncAllFolders,
+		SyncFoldersEnabled:       config.SyncFoldersEnabled,
+		SharedMailboxParentID:    config.SharedMailboxParentID,
 		ReadReceiptRequestPolicy: config.ReadReceiptRequestPolicy,
 		SentFolderPath:           config.SentFolderPath,
 		DraftsFolderPath:         config.DraftsFolderPath,
@@ -104,23 +116,23 @@ func (s *Store) Create(config *AccountConfig) (*Account, error) {
 
 	_, err = s.db.Exec(`
 		INSERT INTO accounts (
-			id, name, email,
+			id, name, email, shared_mailbox_parent_id,
 			imap_host, imap_port, imap_security,
 			smtp_host, smtp_port, smtp_security,
 			auth_type, username,
-			enabled, order_index, color, sync_period_days, sync_interval,
+			enabled, order_index, color, sync_period_days, sync_interval, sync_all_folders, sync_folders_enabled,
 			read_receipt_request_policy,
 			sent_folder_path, drafts_folder_path, trash_folder_path,
 			spam_folder_path, archive_folder_path, all_mail_folder_path,
 			starred_folder_path,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		account.ID, account.Name, account.Email,
+		account.ID, account.Name, account.Email, nullableString(account.SharedMailboxParentID),
 		account.IMAPHost, account.IMAPPort, account.IMAPSecurity,
 		account.SMTPHost, account.SMTPPort, account.SMTPSecurity,
 		account.AuthType, account.Username,
-		account.Enabled, account.OrderIndex, account.Color, account.SyncPeriodDays, account.SyncInterval,
+		account.Enabled, account.OrderIndex, account.Color, account.SyncPeriodDays, account.SyncInterval, boolToInt(account.SyncAllFolders), boolToInt(account.SyncFoldersEnabled),
 		account.ReadReceiptRequestPolicy,
 		nullableString(account.SentFolderPath), nullableString(account.DraftsFolderPath), nullableString(account.TrashFolderPath),
 		nullableString(account.SpamFolderPath), nullableString(account.ArchiveFolderPath), nullableString(account.AllMailFolderPath),
@@ -156,13 +168,14 @@ func (s *Store) Create(config *AccountConfig) (*Account, error) {
 // Get retrieves an account by ID
 func (s *Store) Get(id string) (*Account, error) {
 	account := &Account{}
-	var sentPath, draftsPath, trashPath, spamPath, archivePath, allMailPath, starredPath sql.NullString
+	var sentPath, draftsPath, trashPath, spamPath, archivePath, allMailPath, starredPath, sharedMailboxParentID sql.NullString
+	var syncAllFolders, syncFoldersEnabled int
 	err := s.db.QueryRow(`
-		SELECT id, name, email,
+		SELECT id, name, email, shared_mailbox_parent_id,
 			imap_host, imap_port, imap_security,
 			smtp_host, smtp_port, smtp_security,
 			auth_type, username,
-			enabled, order_index, color, sync_period_days, sync_interval,
+			enabled, order_index, color, sync_period_days, sync_interval, sync_all_folders, sync_folders_enabled,
 			read_receipt_request_policy,
 			sent_folder_path, drafts_folder_path, trash_folder_path,
 			spam_folder_path, archive_folder_path, all_mail_folder_path,
@@ -170,11 +183,11 @@ func (s *Store) Get(id string) (*Account, error) {
 			created_at, updated_at
 		FROM accounts WHERE id = ?
 	`, id).Scan(
-		&account.ID, &account.Name, &account.Email,
+		&account.ID, &account.Name, &account.Email, &sharedMailboxParentID,
 		&account.IMAPHost, &account.IMAPPort, &account.IMAPSecurity,
 		&account.SMTPHost, &account.SMTPPort, &account.SMTPSecurity,
 		&account.AuthType, &account.Username,
-		&account.Enabled, &account.OrderIndex, &account.Color, &account.SyncPeriodDays, &account.SyncInterval,
+		&account.Enabled, &account.OrderIndex, &account.Color, &account.SyncPeriodDays, &account.SyncInterval, &syncAllFolders, &syncFoldersEnabled,
 		&account.ReadReceiptRequestPolicy,
 		&sentPath, &draftsPath, &trashPath,
 		&spamPath, &archivePath, &allMailPath,
@@ -187,6 +200,9 @@ func (s *Store) Get(id string) (*Account, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get account: %w", err)
 	}
+	account.SyncAllFolders = syncAllFolders == 1
+	account.SyncFoldersEnabled = syncFoldersEnabled == 1
+	account.SharedMailboxParentID = sharedMailboxParentID.String
 	// Map nullable strings to account fields
 	account.SentFolderPath = sentPath.String
 	account.DraftsFolderPath = draftsPath.String
@@ -201,11 +217,11 @@ func (s *Store) Get(id string) (*Account, error) {
 // List retrieves all accounts ordered by order_index
 func (s *Store) List() ([]*Account, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, email,
+		SELECT id, name, email, shared_mailbox_parent_id,
 			imap_host, imap_port, imap_security,
 			smtp_host, smtp_port, smtp_security,
 			auth_type, username,
-			enabled, order_index, color, sync_period_days, sync_interval,
+			enabled, order_index, color, sync_period_days, sync_interval, sync_all_folders, sync_folders_enabled,
 			read_receipt_request_policy,
 			sent_folder_path, drafts_folder_path, trash_folder_path,
 			spam_folder_path, archive_folder_path, all_mail_folder_path,
@@ -221,13 +237,14 @@ func (s *Store) List() ([]*Account, error) {
 	var accounts []*Account
 	for rows.Next() {
 		account := &Account{}
-		var sentPath, draftsPath, trashPath, spamPath, archivePath, allMailPath, starredPath sql.NullString
+		var sentPath, draftsPath, trashPath, spamPath, archivePath, allMailPath, starredPath, sharedMailboxParentID sql.NullString
+		var syncAllFolders, syncFoldersEnabled int
 		err := rows.Scan(
-			&account.ID, &account.Name, &account.Email,
+			&account.ID, &account.Name, &account.Email, &sharedMailboxParentID,
 			&account.IMAPHost, &account.IMAPPort, &account.IMAPSecurity,
 			&account.SMTPHost, &account.SMTPPort, &account.SMTPSecurity,
 			&account.AuthType, &account.Username,
-			&account.Enabled, &account.OrderIndex, &account.Color, &account.SyncPeriodDays, &account.SyncInterval,
+			&account.Enabled, &account.OrderIndex, &account.Color, &account.SyncPeriodDays, &account.SyncInterval, &syncAllFolders, &syncFoldersEnabled,
 			&account.ReadReceiptRequestPolicy,
 			&sentPath, &draftsPath, &trashPath,
 			&spamPath, &archivePath, &allMailPath,
@@ -237,7 +254,10 @@ func (s *Store) List() ([]*Account, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan account: %w", err)
 		}
-		// Map nullable strings to account fields
+		// Map nullable strings and booleans to account fields
+		account.SyncAllFolders = syncAllFolders == 1
+		account.SyncFoldersEnabled = syncFoldersEnabled == 1
+		account.SharedMailboxParentID = sharedMailboxParentID.String
 		account.SentFolderPath = sentPath.String
 		account.DraftsFolderPath = draftsPath.String
 		account.TrashFolderPath = trashPath.String
@@ -248,6 +268,61 @@ func (s *Store) List() ([]*Account, error) {
 		accounts = append(accounts, account)
 	}
 
+	return accounts, nil
+}
+
+// ListBySharedMailboxParent returns all shared mailbox accounts linked to a parent account.
+func (s *Store) ListBySharedMailboxParent(parentID string) ([]*Account, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, email, shared_mailbox_parent_id,
+			imap_host, imap_port, imap_security,
+			smtp_host, smtp_port, smtp_security,
+			auth_type, username,
+			enabled, order_index, color, sync_period_days, sync_interval, sync_all_folders, sync_folders_enabled,
+			read_receipt_request_policy,
+			sent_folder_path, drafts_folder_path, trash_folder_path,
+			spam_folder_path, archive_folder_path, all_mail_folder_path,
+			starred_folder_path,
+			created_at, updated_at
+		FROM accounts WHERE shared_mailbox_parent_id = ? ORDER BY name
+	`, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list shared mailboxes: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []*Account
+	for rows.Next() {
+		account := &Account{}
+		var sentPath, draftsPath, trashPath, spamPath, archivePath, allMailPath, starredPath, sharedMailboxParentID sql.NullString
+		var syncAllFolders, syncFoldersEnabled int
+		err := rows.Scan(
+			&account.ID, &account.Name, &account.Email, &sharedMailboxParentID,
+			&account.IMAPHost, &account.IMAPPort, &account.IMAPSecurity,
+			&account.SMTPHost, &account.SMTPPort, &account.SMTPSecurity,
+			&account.AuthType, &account.Username,
+			&account.Enabled, &account.OrderIndex, &account.Color, &account.SyncPeriodDays, &account.SyncInterval, &syncAllFolders, &syncFoldersEnabled,
+			&account.ReadReceiptRequestPolicy,
+			&sentPath, &draftsPath, &trashPath,
+			&spamPath, &archivePath, &allMailPath,
+			&starredPath,
+			&account.CreatedAt, &account.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan shared mailbox: %w", err)
+		}
+		account.SyncAllFolders = syncAllFolders == 1
+		account.SyncFoldersEnabled = syncFoldersEnabled == 1
+		account.SharedMailboxParentID = sharedMailboxParentID.String
+		account.SentFolderPath = sentPath.String
+		account.DraftsFolderPath = draftsPath.String
+		account.TrashFolderPath = trashPath.String
+		account.SpamFolderPath = spamPath.String
+		account.ArchiveFolderPath = archivePath.String
+		account.AllMailFolderPath = allMailPath.String
+		account.StarredFolderPath = starredPath.String
+		accounts = append(accounts, account)
+	}
 	return accounts, nil
 }
 
@@ -270,7 +345,7 @@ func (s *Store) Update(id string, config *AccountConfig) (*Account, error) {
 			imap_host = ?, imap_port = ?, imap_security = ?,
 			smtp_host = ?, smtp_port = ?, smtp_security = ?,
 			auth_type = ?, username = ?,
-			color = ?, sync_period_days = ?, sync_interval = ?,
+			color = ?, sync_period_days = ?, sync_interval = ?, sync_all_folders = ?, sync_folders_enabled = ?,
 			read_receipt_request_policy = ?,
 			sent_folder_path = ?, drafts_folder_path = ?, trash_folder_path = ?,
 			spam_folder_path = ?, archive_folder_path = ?, all_mail_folder_path = ?,
@@ -282,7 +357,7 @@ func (s *Store) Update(id string, config *AccountConfig) (*Account, error) {
 		config.IMAPHost, config.IMAPPort, config.IMAPSecurity,
 		config.SMTPHost, config.SMTPPort, config.SMTPSecurity,
 		config.AuthType, config.Username,
-		config.Color, config.SyncPeriodDays, config.SyncInterval,
+		config.Color, config.SyncPeriodDays, config.SyncInterval, boolToInt(config.SyncAllFolders), boolToInt(config.SyncFoldersEnabled),
 		config.ReadReceiptRequestPolicy,
 		nullableString(config.SentFolderPath), nullableString(config.DraftsFolderPath), nullableString(config.TrashFolderPath),
 		nullableString(config.SpamFolderPath), nullableString(config.ArchiveFolderPath), nullableString(config.AllMailFolderPath),
@@ -314,6 +389,8 @@ func (s *Store) Update(id string, config *AccountConfig) (*Account, error) {
 	existing.Color = config.Color
 	existing.SyncPeriodDays = config.SyncPeriodDays
 	existing.SyncInterval = config.SyncInterval
+	existing.SyncAllFolders = config.SyncAllFolders
+	existing.SyncFoldersEnabled = config.SyncFoldersEnabled
 	existing.ReadReceiptRequestPolicy = config.ReadReceiptRequestPolicy
 	existing.SentFolderPath = config.SentFolderPath
 	existing.DraftsFolderPath = config.DraftsFolderPath
@@ -325,6 +402,26 @@ func (s *Store) Update(id string, config *AccountConfig) (*Account, error) {
 	existing.UpdatedAt = now
 
 	return existing, nil
+}
+
+// UpdateFolderMappings updates only the folder path mappings for an account.
+// Used to persist auto-detected folder mappings without requiring a full account update.
+func (s *Store) UpdateFolderMappings(id, sent, drafts, trash, spam, archive, allMail, starred string) error {
+	_, err := s.db.Exec(`
+		UPDATE accounts SET
+			sent_folder_path = ?, drafts_folder_path = ?, trash_folder_path = ?,
+			spam_folder_path = ?, archive_folder_path = ?, all_mail_folder_path = ?,
+			starred_folder_path = ?, updated_at = ?
+		WHERE id = ?
+	`,
+		nullableString(sent), nullableString(drafts), nullableString(trash),
+		nullableString(spam), nullableString(archive), nullableString(allMail),
+		nullableString(starred), time.Now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update folder mappings: %w", err)
+	}
+	return nil
 }
 
 // Delete deletes an account and all associated data
@@ -463,7 +560,9 @@ func (s *Store) CreateIdentity(accountID string, config *IdentityConfig) (*Ident
 
 	// Get next order index
 	var maxOrder int
-	s.db.QueryRow("SELECT COALESCE(MAX(order_index), -1) FROM identities WHERE account_id = ?", accountID).Scan(&maxOrder)
+	if err := s.db.QueryRow("SELECT COALESCE(MAX(order_index), -1) FROM identities WHERE account_id = ?", accountID).Scan(&maxOrder); err != nil {
+		return nil, fmt.Errorf("failed to get max identity order: %w", err)
+	}
 
 	now := time.Now()
 	identity := &Identity{

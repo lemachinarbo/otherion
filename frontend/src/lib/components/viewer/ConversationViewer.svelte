@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte'
   import Icon from '@iconify/svelte'
   // @ts-ignore - wailsjs bindings
-  import { GetConversation, GetReadReceiptResponsePolicy, SendReadReceipt, IgnoreReadReceipt, GetMarkAsReadDelay, GetMessageSource, ProcessSMIMEMessage, ProcessPGPMessage } from '../../../../wailsjs/go/app/App'
+  import { GetConversation, GetReadReceiptResponsePolicy, SendReadReceipt, IgnoreReadReceipt, GetMarkAsReadDelay, GetMessageSource, ProcessSMIMEMessage, ProcessPGPMessage, FetchMessageBody } from '../../../../wailsjs/go/app/App'
   // @ts-ignore - wailsjs bindings
   import { MarkAsRead, MarkAsUnread, Star, Unstar, Archive, Trash, MarkAsSpam, MarkAsNotSpam, DeletePermanently, Undo } from '../../../../wailsjs/go/app/App'
   // @ts-ignore - wailsjs path
@@ -23,7 +23,7 @@
     folderId?: string | null
     folderType?: string | null
     accountId?: string | null
-    onReply?: (mode: 'reply' | 'reply-all' | 'forward', messageId: string) => void
+    onReply?: (mode: 'reply' | 'reply-all' | 'forward', messageId: string, imagesLoaded?: boolean) => void
     onComposeToAddress?: (toAddress: string) => void
     onEditDraft?: (draftId: string) => void
     onActionComplete?: (autoSelectNext?: boolean) => void
@@ -47,6 +47,9 @@
     showBackButton = false,
     onBack,
   }: Props = $props()
+
+  // Track which messages have had their remote images loaded by the user
+  const messagesWithImagesLoaded = new Set<string>()
 
   // Decrypted attachment metadata
   interface DecryptedAttachment {
@@ -337,6 +340,7 @@
       clearTimeout(refreshTimer)
       refreshTimer = null
     }
+    messagesWithImagesLoaded.clear()
 
     if (threadId && folderId) {
       // Setting is already loaded on mount - no need to fetch on every conversation switch
@@ -456,6 +460,9 @@
 
         // Process PGP messages on-view
         processPGPMessages(conversation.messages)
+
+        // Fetch bodies for messages that don't have them yet (on-demand)
+        fetchUnfetchedBodies(conversation.messages)
       }
     } catch (err) {
       console.error('Failed to load conversation:', err)
@@ -485,6 +492,32 @@
   }
 
   // Process S/MIME messages on-view (verify/decrypt fresh each time)
+  // Fetch bodies on-demand for messages that don't have them yet
+  async function fetchUnfetchedBodies(messages: messageModels.Message[]) {
+    for (const msg of messages) {
+      if ((msg as any).bodyFetched === false && !msg.bodyHtml && !msg.bodyText) {
+        try {
+          const updated = await FetchMessageBody(msg.id)
+          // Update the message in the conversation if still viewing
+          if (conversation?.messages) {
+            const idx = conversation.messages.findIndex(m => m.id === msg.id)
+            if (idx >= 0 && updated) {
+              conversation.messages[idx] = updated
+              conversation = conversation // trigger reactivity
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch body for message:', msg.id, err)
+          // Message may have been deleted from server — remove from conversation display
+          if (conversation?.messages) {
+            conversation.messages = conversation.messages.filter(m => m.id !== msg.id)
+            conversation = conversation // trigger reactivity
+          }
+        }
+      }
+    }
+  }
+
   function processSMIMEMessages(messages: messageModels.Message[]) {
     // Clear previous results
     smimeResults = {}
@@ -695,21 +728,21 @@
   function handleReply() {
     const messageId = getTargetMessageId()
     if (messageId && onReply) {
-      onReply('reply', messageId)
+      onReply('reply', messageId, messagesWithImagesLoaded.has(messageId))
     }
   }
 
   function handleReplyAll() {
     const messageId = getTargetMessageId()
     if (messageId && onReply) {
-      onReply('reply-all', messageId)
+      onReply('reply-all', messageId, messagesWithImagesLoaded.has(messageId))
     }
   }
 
   function handleForward() {
     const messageId = getTargetMessageId()
     if (messageId && onReply) {
-      onReply('forward', messageId)
+      onReply('forward', messageId, messagesWithImagesLoaded.has(messageId))
     }
   }
 
@@ -1029,6 +1062,10 @@
 
   export function forward() {
     handleForward()
+  }
+
+  export function isImagesLoaded(messageId: string): boolean {
+    return messagesWithImagesLoaded.has(messageId)
   }
 
   export function loadImages() {
@@ -1582,6 +1619,7 @@
                             bodyText={msg.hasPGP && pgpResults[msg.id] ? pgpResults[msg.id].bodyText : msg.hasSMIME && smimeResults[msg.id] ? smimeResults[msg.id].bodyText : msg.bodyText}
                             fromEmail={msg.fromEmail}
                             onCompose={onComposeToAddress}
+                            onImagesLoaded={() => messagesWithImagesLoaded.add(msg.id)}
                             encryptedInlineAttachments={pgpResults[msg.id]?.inlineAttachments ?? smimeResults[msg.id]?.inlineAttachments}
                           />
                         {/if}

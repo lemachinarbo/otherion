@@ -94,6 +94,7 @@ func (a *App) MoveLocalMessages(messageIDs []string, folderID string) error {
 
 	// Update folder counts for all affected folders (source + destination)
 	go func() {
+		defer recoverPanic("app.undo", "update folder counts")
 		folderCounts := make(map[string]int)
 
 		// Update source folders
@@ -135,4 +136,16 @@ func (a *App) DeleteLocalMessages(messageIDs []string) error {
 		wailsRuntime.EventsEmit(a.ctx, "messages:deleted", messageIDs)
 	}
 	return err
+}
+
+// FindLocalMessageIDs implements undo.UndoContext
+// Finds current local DB message IDs by RFC822 Message-ID header and folder
+func (a *App) FindLocalMessageIDs(accountID, folderID string, rfc822MessageIDs []string) ([]string, error) {
+	return a.messageStore.GetIDsByMessageIDs(accountID, folderID, rfc822MessageIDs)
+}
+
+// MoveMessagesToFolder implements undo.UndoContext
+// Delegates to the standard MoveToFolder pipeline (IMAP + local DB + events)
+func (a *App) MoveMessagesToFolder(messageIDs []string, destFolderID string) error {
+	return a.MoveToFolder(messageIDs, destFolderID)
 }
