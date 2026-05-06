@@ -170,12 +170,12 @@ export const providers: EmailProvider[] = [
 export function detectProvider(email: string): EmailProvider | null {
   const domain = email.split('@')[1]?.toLowerCase()
   if (!domain) return null
-  
+
   // Find matching provider (excluding 'custom')
   const provider = providers.find(
     (p) => p.id !== 'custom' && p.domains.includes(domain)
   )
-  
+
   return provider ?? null
 }
 

@@ -5,8 +5,10 @@
 
 - Added French translation
 - Fixed untranslated drop down menu items
-- Adjusted composer CSS after translation PR
 - Fixed iCloud Empty Trash [#136](https://github.com/hkdb/aerion/issues/136)
+- Added ESLint for frontend linting
+
+**Note:** The linting and cleanup in this release should bring visiable frontend performance improvements.
 
 
 **v0.2.0 - 04-29-2026**

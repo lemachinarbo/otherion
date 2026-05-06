@@ -55,12 +55,12 @@
   let selectedFolderType = $state<string | null>(null)
   // Track where the selection came from: 'unified' for unified section, 'account' for account tree
   let selectionSource = $state<'unified' | 'account' | null>(null)
-  
+
   // Selected conversation state
   let selectedThreadId = $state<string | null>(null)
   let selectedConversationFolderId = $state<string | null>(null)
   let selectedConversationAccountId = $state<string | null>(null)
-  
+
   // Composer state
   let showComposer = $state(false)
   let composerAccountId = $state<string | null>(null)
@@ -255,11 +255,11 @@
 
     // Load persisted UI state
     const uiState = await loadUIState()
-    
+
     // Restore pane widths (already validated/clamped by loadUIState)
     sidebarWidth = uiState.sidebarWidth
     listWidth = uiState.listWidth
-    
+
     // Restore folder selection if valid
     if (uiState.selectedAccountId && uiState.selectedFolderId) {
       // Validate account still exists (unless unified inbox)
@@ -267,13 +267,13 @@
       const accountExists = isUnified || accountStore.accounts.some(
         a => a.account.id === uiState.selectedAccountId
       )
-      
+
       if (accountExists) {
         selectedAccountId = uiState.selectedAccountId
         selectedFolderId = uiState.selectedFolderId
         selectedFolderName = uiState.selectedFolderName || 'Inbox'
         selectedFolderType = uiState.selectedFolderType
-        
+
         // Restore conversation selection
         if (uiState.selectedThreadId) {
           selectedThreadId = uiState.selectedThreadId
@@ -418,7 +418,7 @@
       selectedConversationFolderId: folderId,
     })
   }
-  
+
   // Resolve an account ID that may be 'unified' to a real account ID.
   // Returns the first real account ID if the input is 'unified' or falsy.
   function resolveAccountId(id: string | null): string | undefined {
@@ -532,7 +532,7 @@
     })
     showComposer = true
   }
-  
+
   // Handle reply/reply-all/forward - calls backend API
   async function handleReply(mode: 'reply' | 'reply-all' | 'forward', messageId: string, imagesLoaded?: boolean) {
     // Use conversation's account ID (important for unified inbox), fall back to selected account or first account
@@ -560,7 +560,7 @@
       showComposer = true
     }
   }
-  
+
   // Close composer
   function closeComposer() {
     showComposer = false
@@ -641,7 +641,7 @@
     const inInput = isInputElement(e.target)
     const focusedPane = getFocusedPane()
     const hasConversation = selectedThreadId !== null
-    
+
     // Don't intercept keyboard events when a context menu or dropdown is open
     // (bits-ui portals mount [role="menu"] only while open)
     if (document.querySelector('[role="menu"]')) return

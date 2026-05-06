@@ -42,7 +42,7 @@
   }
 
   let {
-    editAccount,
+    editAccount: _editAccount,
     name = $bindable(),
     displayName = $bindable(),
     color = $bindable(),
@@ -237,8 +237,8 @@
 
     <div class="space-y-2">
       <Label>{$_('account.syncPeriod')}</Label>
-      <Select.Root 
-        value={syncPeriodDays} 
+      <Select.Root
+        value={syncPeriodDays}
         onValueChange={(v) => { syncPeriodDays = v; onSyncPeriodChange(v) }}
       >
         <Select.Trigger>

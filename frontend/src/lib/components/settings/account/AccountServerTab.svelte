@@ -398,8 +398,8 @@
 
     <div class="space-y-2">
       <Label>{$_('account.checkNewMail')}</Label>
-      <Select.Root 
-        value={syncInterval} 
+      <Select.Root
+        value={syncInterval}
         onValueChange={(v) => { syncInterval = v; onSyncIntervalChange(v) }}
       >
         <Select.Trigger>
@@ -420,8 +420,8 @@
 
     <div class="space-y-2">
       <Label>{$_('account.requestReadReceipts')}</Label>
-      <Select.Root 
-        value={readReceiptRequestPolicy} 
+      <Select.Root
+        value={readReceiptRequestPolicy}
         onValueChange={(v) => { readReceiptRequestPolicy = v; onReadReceiptPolicyChange(v) }}
       >
         <Select.Trigger>

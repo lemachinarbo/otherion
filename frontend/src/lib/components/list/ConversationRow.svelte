@@ -55,7 +55,7 @@
     highlightedSnippet = '',
     highlightedFromName = '',
     searchFolderName = '',
-    searchFolderType = '',
+    searchFolderType: _searchFolderType = '',
     isNonLocal = false,
     onSelect,
     onCheck,
@@ -316,6 +316,7 @@
         <!-- Participant Names (with highlighting if in search mode) -->
         {#if highlightedFromName}
           <span class="{densityClasses.senderText[density]} truncate {hasUnread ? 'font-semibold text-foreground' : 'text-foreground'}">
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlightMatches only inserts <mark> around already-escaped text -->
             {@html highlightedFromName}
           </span>
         {:else}
@@ -367,6 +368,7 @@
         <p
           class="truncate {densityClasses.text[density]} {hasUnread ? 'font-medium text-foreground' : 'text-muted-foreground'}"
         >
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlightMatches only inserts <mark> around already-escaped text -->
           {@html highlightedSubject}
         </p>
       {:else}
@@ -380,6 +382,7 @@
       <!-- Snippet (with highlighting if in search mode) -->
       {#if highlightedSnippet}
         <p class="truncate {densityClasses.text[density]} text-muted-foreground">
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlightMatches only inserts <mark> around already-escaped text -->
           {@html highlightedSnippet}
         </p>
       {:else if conversation.snippet}
