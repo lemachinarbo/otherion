@@ -5,6 +5,7 @@
 ---
 
 - Added Czech translation
+- Added composer del/backspace guard to prevent accidental message delete
 
 
 **v0.2.2 - 05-09-2026**

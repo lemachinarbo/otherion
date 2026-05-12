@@ -410,8 +410,6 @@ Special thanks to translation contributors for making Aerion more accessible:
       </a><br>
       <sub>Čeština (cs)</sub>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="https://github.com/freemans32">
         <img src="https://github.com/freemans32.png" width="80"><br>

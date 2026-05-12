@@ -25,7 +25,8 @@
     focusPreviousPane,
     focusNextPane,
     isPaneFlashing,
-    isInputElement
+    isInputElement,
+    setComposerOpen
   } from '$lib/stores/keyboard.svelte'
   import { initLayout, getLayoutMode, getResponsiveView, showViewer, hideViewer, showSidebar, hideSidebar, isResponsive } from '$lib/stores/layout.svelte'
   // @ts-ignore - wailsjs path
@@ -67,6 +68,12 @@
   let composerInitialMessage = $state<smtp.ComposeMessage | null>(null)
   let composerDraftId = $state<string | null>(null)
   let composerImagesLoaded = $state(false)
+
+  // Mirror composer visibility into the keyboard store so the viewer can
+  // suppress its Delete/Backspace shortcut during the composer's mount→focus race.
+  $effect(() => {
+    setComposerOpen(showComposer)
+  })
 
   // Focus mode state — viewer (or single message) takes the whole window.
   // Always resets on conversation change, on Esc, on back-arrow, and on app reload.

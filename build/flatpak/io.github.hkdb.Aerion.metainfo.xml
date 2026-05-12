@@ -175,6 +175,7 @@
       <description>
         <ul>
           <li>Added Czech translation</li>
+          <li>Added composer del/backspace guard to prevent accidental message delete</li>
         </ul>
       </description>
     </release>
