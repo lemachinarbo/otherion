@@ -945,7 +945,9 @@
     "emptyTrash": "Empty Trash?",
     "emptyTrashDescription": "This will permanently delete all messages in the Trash folder. This action cannot be undone.",
     "confirmDeletePermanently": "Delete Permanently",
-    "confirmEmptyTrash": "Empty Trash"
+    "confirmEmptyTrash": "Empty Trash",
+    "crossAccountMoveTitle": "Cross-account move not supported",
+    "crossAccountMoveDescription": "Moving messages between accounts is not yet supported. This feature is planned for a future release."
   },
   "date": {
     "justNow": "just now",

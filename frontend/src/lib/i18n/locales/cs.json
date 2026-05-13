@@ -945,7 +945,9 @@
     "emptyTrash": "Vyprázdnit koš?",
     "emptyTrashDescription": "Tímto trvale smažete všechny zprávy v koši. Tuto akci nelze vrátit zpět.",
     "confirmDeletePermanently": "Trvale smazat",
-    "confirmEmptyTrash": "Vyprázdnit koš"
+    "confirmEmptyTrash": "Vyprázdnit koš",
+    "crossAccountMoveTitle": "Cross-account move not supported",
+    "crossAccountMoveDescription": "Moving messages between accounts is not yet supported. This feature is planned for a future release."
   },
   "date": {
     "justNow": "právě teď",

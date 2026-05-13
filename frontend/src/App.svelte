@@ -1244,6 +1244,7 @@
         onUnifiedFolderSelect={handleUnifiedFolderSelect}
         onCompose={handleCompose}
         onUnifiedInboxSelect={handleUnifiedInboxSelect}
+        onMessagesMoved={() => messageListRef?.handleActionComplete(false)}
         selectedAccountId={selectedAccountId}
         selectedFolderId={selectedFolderId}
         selectionSource={selectionSource}

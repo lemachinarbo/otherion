@@ -940,7 +940,9 @@
     "emptyTrash": "清空回收站？",
     "emptyTrashDescription": "这将永久删除回收站中的所有邮件。此操作无法撤销。",
     "confirmDeletePermanently": "永久删除",
-    "confirmEmptyTrash": "清空回收站"
+    "confirmEmptyTrash": "清空回收站",
+    "crossAccountMoveTitle": "Cross-account move not supported",
+    "crossAccountMoveDescription": "Moving messages between accounts is not yet supported. This feature is planned for a future release."
   },
   "date": {
     "justNow": "刚才",
