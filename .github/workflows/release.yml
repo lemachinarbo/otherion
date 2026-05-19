@@ -118,8 +118,9 @@ jobs:
         env:
           GOARCH: ${{ matrix.arch }}
         run: |
-          make build
+          make build-windows-installer
           Move-Item build/bin/aerion.exe build/bin/Aerion-windows-${{ matrix.arch }}.exe
+          Move-Item build/bin/aerion-${{ matrix.arch }}-installer.exe build/bin/Aerion-windows-setup-${{ matrix.arch }}.exe
 
       - uses: actions/upload-artifact@v7
         with:
