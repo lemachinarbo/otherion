@@ -10,7 +10,7 @@
 - Dark content auto bg color and overrides - [#195](https://github.com/hkdb/aerion/issues/195)
 - Added guard rails to prevent accidental close of dialogs - [#201](https://github.com/hkdb/aerion/issues/201) - [#198](https://github.com/hkdb/aerion/issues/198)
 - Fixed message list on folder switch bug - [#200](https://github.com/hkdb/aerion/issues/200)
-- Fixed detached composer cancel orphaned draft edge case
+- Fixed detached composer draft ops - [#213](https://github.com/hkdb/aerion/issues/213) - [#214](https://github.com/hkdb/aerion/issues/214)
 - Fixed send receipt feature
 - Fixed dark themes composer lists - [#215](https://github.com/hkdb/aerion/issues/215)
 - Fixed setting dialog layout - [#203](https://github.com/hkdb/aerion/issues/203)
