@@ -4,7 +4,7 @@
 **v0.3.0 - 06-03-2026**
 ---
 
-
+- Added fallback for Mailfence and other non-quote-compliant providers - [#209](https://github.com/hkdb/aerion/issues/209)
 
 
 **v0.2.5 - 05-27-2026**

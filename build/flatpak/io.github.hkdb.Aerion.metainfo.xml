@@ -235,7 +235,7 @@
     <release version="0.3.0" date="2026-06-03">
       <description>
         <ul>
-          <li></li>
+          <li>Added fallback for Mailfence and other non-quote-compliant providers - #209</li>
         </ul>
       </description>
     </release>

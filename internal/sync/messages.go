@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
@@ -689,7 +690,29 @@ func (e *Engine) fetchMessageHeaders(ctx context.Context, client *imapclient.Cli
 			Int("fetched", fetchedCount).
 			Int("requested", len(uids)).
 			Msg("Header fetch close error, continuing with saved messages")
-		// Don't return error - we saved what we got
+
+		// Recovery path for malformed-envelope servers (e.g., Mailfence emitting a bare
+		// space where "" or NIL should be for an empty subject — see issue #209). Only
+		// triggers on this specific parse error signature; everything else falls through
+		// to the existing "log + continue with partial results" behavior.
+		if strings.Contains(err.Error(), `expected string, got " "`) && fetchedCount < len(uids) {
+			savedUIDs := make(map[uint32]bool, len(savedMessages))
+			for _, m := range savedMessages {
+				savedUIDs[m.UID] = true
+			}
+			missing := make([]uint32, 0, len(uids)-fetchedCount)
+			for _, u := range uids {
+				if !savedUIDs[u] {
+					missing = append(missing, u)
+				}
+			}
+			recovered, recErr := e.recoverFailedHeaderBatch(ctx, client, accountID, folderID, missing)
+			if recErr != nil {
+				e.log.Warn().Err(recErr).Msg("Header recovery returned error")
+			}
+			savedMessages = append(savedMessages, recovered...)
+			fetchedCount += len(recovered)
+		}
 	}
 
 	e.log.Debug().
