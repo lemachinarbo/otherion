@@ -407,35 +407,62 @@ Phase 1 impl ([`internal/extensions/compose/api.go`](../internal/extensions/comp
 
 ```go
 type Contacts interface {
-    // Read
+    // Contact CRUD (consumed by the Contacts extension's own Bridge)
     SearchContacts(query string, limit int) ([]Contact, error)
     GetContact(emailOrID string) (*Contact, error)
     ListContacts(filter ContactFilter) ([]Contact, error)
-
-    // Write (Phase 2b)
+    ListAddressbooks(sourceID string) ([]Addressbook, error)
+    CreateContact(input ContactCreateInput) (id string, err error)
     UpdateContact(id string, patch ContactPatch) error
     DeleteContact(id string) error
 
-    // Events (Phase 3+)
+    // Source management (host-implemented in app/coreimpl.go; available to
+    // cross-extension consumers + used by the Contacts extension's bridge to
+    // drive the sidebar source list + account-setup hook).
+    ListSources() ([]ContactSource, error)
+    LinkAccountSource(accountID, name string, syncInterval int) (string, error)
+
+    // Events (Phase 3+, when a core event bus exists)
     SubscribeToContactEvents(types []ContactEventType) (<-chan ContactEvent, Unsubscribe, error)
 }
 
+// Full multi-field patch shape (2b.2.b.2). Pointer fields distinguish
+// "leave unchanged" (nil) from "set to empty"; pointer-to-slice for
+// multi-value fields preserves the same three states.
 type ContactPatch struct {
-    Name *string `json:"name,omitempty"` // nil = leave unchanged
+    Name       *string           `json:"name,omitempty"`
+    Nickname   *string           `json:"nickname,omitempty"`
+    Org        *string           `json:"org,omitempty"`
+    Title      *string           `json:"title,omitempty"`
+    Note       *string           `json:"note,omitempty"`
+    Bday       *string           `json:"bday,omitempty"`
+    Emails     *[]ContactEmail   `json:"emails,omitempty"`
+    Phones     *[]ContactPhone   `json:"phones,omitempty"`
+    Addresses  *[]ContactAddress `json:"addresses,omitempty"`
+    URLs       *[]ContactURL     `json:"urls,omitempty"`
+    IMPPs      *[]ContactIMPP    `json:"impps,omitempty"`
+    Categories *[]string         `json:"categories,omitempty"`
+    Photo      *ContactPhoto     `json:"photo,omitempty"`
 }
 ```
 
-Concrete impl: [`extensions/contacts/backend/api.go`](../extensions/contacts/backend/api.go). Search/Get/List wrap the existing core `contact.Store` + `carddav.Store`. UpdateContact/DeleteContact dispatch by source (see "Local-contact edit/delete" in §16). `SubscribeToContactEvents` returns `ErrUnimplemented` until a core event bus exists.
+**Split implementation** — two backends sit behind this interface depending on the method:
+
+- **Contact CRUD** (`Search`/`Get`/`List`/`ListAddressbooks`/`Create`/`Update`/`Delete`): implemented in [`extensions/contacts/backend/api.go`](../extensions/contacts/backend/api.go) and exposed via the Contacts extension's Bridge. `Search`/`Get`/`List` wrap `contact.Store` + `carddav.Store`. `Create` source-dispatches: local manual → `contact.Store.UpsertRecord`; CardDAV → `carddav.Store.CreateRecord` (server PUT with `If-None-Match: *`). `Update`/`Delete` dispatch the same way (see [§ Local-contact edit/delete](#local-contact-editdelete) below). `SubscribeToContactEvents` returns `ErrUnimplemented` until a core event bus exists.
+- **Source management** (`ListSources`/`LinkAccountSource`): implemented in [`app/coreimpl.go`](../app/coreimpl.go) `contactsCoreImpl`, wrapping `app.carddavStore.ListSources()` + the existing `App.LinkAccountContactSource`. These live host-side because `contact_sources` is a host-owned table (mail's autocomplete also reads it). The Contacts extension's bridge proxies through `b.deps.Core.Contacts().*`.
+- The `Search`/`Get`/`List`/`Create`/`Update`/`Delete` methods on `app/coreimpl.go contactsCoreImpl` are intentionally `ErrUnimplemented`: routing them through coreImpl would force the Contacts extension's stores to initialize even when disabled, breaking the lightweight invariant. They get filled in when a cross-extension consumer actually needs them.
 
 **`ContactFilter.SourceID` conventions:**
 
 | Value | Behavior |
 |---|---|
 | `""` (empty) | Merged listing — when `Query` is set, calls `contact.Store.Search` (local + vCard + CardDAV merged + ranked). When `Query` is empty, falls back to local-only list. |
-| `"local"` (`extcontacts.SourceIDLocal`) | Aerion's core local contacts only (sent recipients, vCard). Paged via `Limit`/`Offset`. |
-| `<carddav source UUID>` | Contacts from a specific CardDAV source. Uses `carddav.Store.ListContactsPaged`; only enabled sources + addressbooks are returned. |
+| `"local"` | All local contacts (manual + collected). |
+| `"local:manual"` | User-added local contacts (Add Contact UI). Also the canonical target for `CreateContact` when SourceID is "" or "local". |
+| `"local:collected"` | Auto-collected from sent-mail recipients. Read-only as a *create target* (the `collected` kind is reserved for the email-collection process to assign); `UpdateContact`/`DeleteContact` work fine. |
+| `<carddav source UUID>` | Contacts from a specific CardDAV source. Reads use `carddav.Store.ListRecordIDsForSource`; writes PUT/DELETE the source's WebDAV. |
 
-**`GetContact` / `UpdateContact` / `DeleteContact` argument:** if the id contains `@`, treated as an email and routed to the core local store; otherwise treated as a CardDAV UUID. Read methods look up via `carddav.Store.GetContactByID`. Write methods on CardDAV/Google/Microsoft sources return `ErrUnimplemented` in Phase 2b.1; filled in by 2b.2 (CardDAV PUT) and 2b.3 (Google People / MS Graph). `GetContact` returns `(nil, nil)` when not found — never an error for missing. `ContactPatch` with no fields set is a no-op success.
+**`GetContact` / `UpdateContact` / `DeleteContact` argument:** if the id contains `@`, treated as an email and routed to the local store; otherwise treated as a record UUID (works for both local and CardDAV records). `GetContact` calls `enrichCardDAVSourceID` to rewrite the literal `"carddav"` string from `fromRecord` into the actual sidebar source UUID, so the frontend's writability gate finds the source row. Write methods on Google/Microsoft sources still return `ErrUnimplemented` (Phase 2b.3); CardDAV is fully wired since 2b.2. `GetContact` returns `(nil, nil)` when not found — never an error for missing. `ContactPatch` with all-nil pointers is a no-op success.
 
 ### `Auth`
 
@@ -1087,7 +1114,7 @@ Extensions need to look and behave like the rest of Aerion — same keys, same f
 
 ### The 1-for-1 rule
 
-Every kit primitive (`Avatar`, `ListPane`, `ListRow`, `SourceSidebar`, `SourceItem`, `DetailPane`, `ConfirmDialog`, `OAuthCredsSlotEditor`, …) is a behavioral replica of how the equivalent functionality works in mail today: same key bindings, same focus semantics, same scroll-into-view, same edge-case behavior. The backwards-compat test: **if mail were ever refactored to consume the kit, the user should see zero difference**. If you can't pass that test on a kit primitive you're writing, you've diverged.
+Every kit primitive (`Avatar`, `PaneLayout`, `ListPane`, `ListRow`, `ListHeader`, `ResponsiveSidebarToggle`, `SourceSidebar`, `SourceItem`, `DetailPane`, `ConfirmDialog`, `OAuthCredsSlotEditor`, …) is a behavioral replica of how the equivalent functionality works in mail today: same key bindings, same focus semantics, same scroll-into-view, same edge-case behavior. The backwards-compat test: **if mail were ever refactored to consume the kit, the user should see zero difference**. If you can't pass that test on a kit primitive you're writing, you've diverged.
 
 **Practical consequence: read the mail equivalent before implementing a kit primitive.** Don't infer behavior. Don't reach for a generic third-party pattern. Open `MessageList.svelte` / `Sidebar.svelte` / `ConversationViewer.svelte` / the relevant `ui/` host primitive and study how it handles keyboard, focus, scroll, and edge cases. Then match that behavior in the kit.
 
@@ -1215,6 +1242,7 @@ The `onDelete` handler typically opens a `ConfirmDialog` (see below) rather than
 - j/k/Up/Down navigation across the flattened item list
 - Enter to re-select current
 - DOM-level focus; registers as `'sidebar'` slot by default (override via `focusSlot` prop)
+- **Self-managed responsive behavior**: reads `getLayoutMode`/`getResponsiveView`/`hideSidebar` from `$lib/stores/layout.svelte` and applies `responsive-sidebar-overlay`/`responsive-sidebar-visible` to its outer `<div>` in narrow mode. A back arrow injected at the top dismisses the overlay. Background flips from `bg-muted/30` (in-flow) to `bg-background` (overlay) so the narrow-mode scrim doesn't show through. No responsive props on the public API.
 
 #### `DetailPane` — header/body/empty-state shell
 
@@ -1233,6 +1261,67 @@ The `onDelete` handler typically opens a `ConfirmDialog` (see below) rather than
 ```
 
 Read-only shell — no keyboard ownership. Header is fixed; body scrolls. Empty-state can be customized via snippet or just `emptyIcon`/`emptyText` props.
+
+`DetailPane` is **self-managed responsive** — it reads `getLayoutMode` / `getResponsiveView` / `hideViewer` directly from `$lib/stores/layout.svelte` and applies `responsive-viewer-overlay` + `responsive-viewer-visible` to its outer `<section>` automatically when below the medium breakpoint. A back-arrow button is injected at the start of the header in narrow mode (calls `hideViewer`). Consumers don't pass responsive props or onBack handlers — the kit handles it.
+
+#### `PaneLayout` — outer container for 3-column extension panes
+
+[`frontend/src/lib/components/kit/PaneLayout.svelte`](../frontend/src/lib/components/kit/PaneLayout.svelte)
+
+```svelte
+<PaneLayout>
+  <ContactsSidebar />   <!-- wraps kit's SourceSidebar -->
+  <ContactList />        <!-- wraps kit's ListPane + ListHeader -->
+  <ContactDetail />      <!-- wraps kit's DetailPane -->
+</PaneLayout>
+```
+
+The canonical wrapper for kit-based 3-column extension panes. Provides:
+- A `relative` + `overflow-hidden` positioning context that anchors the kit primitives' `responsive-sidebar-overlay` / `responsive-viewer-overlay` and **clips their off-screen hit-test regions so sibling components (notably `ExtensionRail`) remain clickable in narrow mode**. The `overflow-hidden` is load-bearing — without it the off-screen sidebar's leftward translation leaks into the rail's column.
+- The narrow-mode `responsive-scrim` rendered as a sibling overlay; click dismisses the sidebar.
+
+Zero props. Just compose your three kit-based panes inside. Extensions don't import the layout store, manage scrim state, or wire pane-class merging — that's all internal.
+
+#### `ListHeader` — canonical list-column toolbar
+
+[`frontend/src/lib/components/kit/ListHeader.svelte`](../frontend/src/lib/components/kit/ListHeader.svelte)
+
+```svelte
+<ListHeader
+  label={headerLabel}                       /* extension-computed $derived from sidebar selection */
+  count={contactsView.contacts.length}
+  searchMode={showSearch}
+>
+  {#snippet search()}
+    <!-- consumer's search input + clear button -->
+  {/snippet}
+  {#snippet actions()}
+    <!-- consumer's sort / add / extra buttons -->
+  {/snippet}
+</ListHeader>
+```
+
+Owns:
+- Toolbar wrapper styling (`flex items-center justify-between px-4 py-3 border-b border-border`) so every kit consumer's list column shares mail's `MessageList` toolbar rhythm.
+- Leading `<ResponsiveSidebarToggle />` auto-included.
+- `<h2>` title + count badge layout.
+- Search-mode swap (when `searchMode === true`, the title area is replaced by the consumer's `search` snippet).
+- Trailing `actions` snippet for per-extension toolbar buttons.
+
+Does **not** own:
+- The label value (extension knows about sources/folders/categories — pass a `$derived` that tracks the active sidebar selection so the title is dynamic, not static).
+- Search input markup (debounce, refs, clear-button logic stays in the consumer).
+- The action buttons themselves (sort / add / etc. are extension-specific).
+
+#### `ResponsiveSidebarToggle` — hamburger for narrow mode
+
+[`frontend/src/lib/components/kit/ResponsiveSidebarToggle.svelte`](../frontend/src/lib/components/kit/ResponsiveSidebarToggle.svelte)
+
+```svelte
+<ResponsiveSidebarToggle />
+```
+
+Zero-prop drop-in. Renders nothing when not narrow; renders an `mdi:dock-left` icon button when narrow that fires `showSidebar()` on click. Auto-included inside `ListHeader` so extensions composing the canonical toolbar don't need to mount this directly — it appears here in the kit's component list only for the case where an extension renders its own custom toolbar and wants the canonical hamburger placement.
 
 #### `ConfirmDialog` — destructive-action confirmation
 
@@ -1471,9 +1560,9 @@ For sent-recipient (local) contacts and CardDAV contacts alike, the Contacts ext
 | Extension API ([`extensions/contacts/backend/api.go`](../extensions/contacts/backend/api.go)) | `UpdateContact` calls `applyContactPatchToRecord(rec, patch)` to apply every non-nil patch field, then source-dispatches by id: local id → `contact.Store.UpsertRecord(rec)`; CardDAV UUID → `writeCardDAVRecord(rec)` (PUT the full vCard); Google/MS UUID → `ErrUnimplemented` (filled in by 2b.3) |
 | Core store ([`internal/contact/store.go`](../internal/contact/store.go)) | `UpsertRecord` / `UpsertRecordTx` writes the record + all sub-tables (emails, phones, addresses, urls, impps, categories, photo). Sets `name_overridden=1` on every email when the Name field is patched, so auto-collection never clobbers a user edit. |
 
-**Why route through the extension API instead of calling the core store directly:** writes follow the same SDK pattern as reads. The 2b.2 (CardDAV write) and 2b.3 (Google/MS write) phases fill in source-branches inside `extcontactsbe.API.UpdateContact`/`DeleteContact` — NO new Wails methods, NO new direct-store call sites. Future extensions (Calendar) declare their CRUD on their own `coreapi` interface and follow the same pattern.
+**Why route through the extension API instead of calling the core store directly:** writes follow the same SDK pattern as reads. CardDAV writes shipped in 2b.2 (PUT/DELETE) and 2b.2.c (POST-new); Google/MS writes land in 2b.3 by filling in the corresponding source branches inside `extcontactsbe.API.UpdateContact`/`DeleteContact`/`CreateContact` — NO new Wails methods, NO new direct-store call sites. Future extensions (Calendar) declare their CRUD on their own `coreapi` interface and follow the same pattern.
 
-CardDAV / Google / Microsoft contact edits land in Phase 2b.2 (CardDAV write) and 2b.3 (provider OAuth write paths). Same Wails methods, same extension API methods — only the now-`ErrUnimplemented` branches inside the API impl get filled in.
+Google / Microsoft contact edits remain the one source branch still returning `ErrUnimplemented` today; Phase 2b.3 fills those in alongside incremental-consent OAuth for write scopes.
 
 ### Source-dispatch pattern (transferable to Calendar / future extensions)
 
@@ -1513,7 +1602,7 @@ When Calendar lands, its `coreapi.Calendar` interface gains `CreateEvent`/`Updat
 
 ### Source `writable` flag
 
-`contact_sources.writable` is a boolean (default 0) tracking whether the user has opted in to write capability on a given source. Set per-source via the source-edit UI (Phase 2b.2). For CardDAV sources, flipping the flag is purely a UI choice — credentials already cover both directions. For OAuth sources (Phase 2b.3), the flag is set after successful incremental consent stores write-scoped tokens under the extension's client config.
+`contact_sources.writable` is a boolean tracking whether the user has write capability enabled on a given source. **New CardDAV sources default to `writable = true`** as of 2b.2.b.2 — adding a CardDAV source signals intent to use it; forcing users to dig into a hidden toggle was the previous discoverability bug. The user can opt out by un-checking "Enable write access" in the source dialog. OAuth-linked sources (Google/Microsoft) keep `writable = false` by default until 2b.3 ships the incremental-consent flow that grants write-scoped tokens under the extension's client config; the dialog's writable toggle is disabled for those source rows in the meantime.
 
 ---
 

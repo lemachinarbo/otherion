@@ -73,7 +73,11 @@
   const {
     items,
     selectedId,
-    density = 'standard',
+    // Destructured but not used locally — density is honored by the consumer's
+    // ListRow renderer, not by ListPane's container styling. Kept in the Props
+    // interface so consumers can still pass <ListPane density="...">; the
+    // underscore prefix tells eslint this unused-on-purpose.
+    density: _density = 'standard',
     focusSlot = 'messageList',
     label,
     row,

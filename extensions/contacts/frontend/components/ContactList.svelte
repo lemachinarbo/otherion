@@ -22,9 +22,10 @@
   import { contactsView, reloadContacts, selectContact, setSearchQuery, deleteLocalContact } from '$extensions/contacts/frontend/stores/contactsView.svelte'
   import { contactSourcesStore } from '$extensions/contacts/frontend/stores/contactSources.svelte'
   import { toasts } from '$lib/stores/toast'
-  // Mobile-mode sidebar toggle. Kit primitive — renders itself only when
-  // narrow; no gating or icon choice needed in the extension.
-  import ResponsiveSidebarToggle from '$lib/components/kit/ResponsiveSidebarToggle.svelte'
+  // Canonical list toolbar — owns hamburger placement, title styling, count
+  // badge, search-mode swap. Extension just supplies label/count + per-extension
+  // search markup + trailing action buttons.
+  import ListHeader from '$lib/components/kit/ListHeader.svelte'
   // @ts-ignore - wailsjs bindings
   import type { v1 } from '$wailsjs/go/models'
 
@@ -159,44 +160,55 @@
     })
     return items
   })
+
+  // Header label tracks the sidebar's selected category — mirrors mail's
+  // MessageList showing the active folder name. Local sub-sources reuse the
+  // sidebar i18n keys (so labels stay consistent). CardDAV sources resolve
+  // to the user-given source name; unknown ids fall back to the generic
+  // "Contacts" label so the header is never empty.
+  const headerLabel = $derived.by(() => {
+    const sel = contactsView.selectedSourceId
+    if (sel === '') return $_('contacts.sidebar.all')
+    if (sel === 'local') return $_('contacts.sidebar.localAll')
+    if (sel === 'local:manual') return $_('contacts.sidebar.localManual')
+    if (sel === 'local:collected') return $_('contacts.sidebar.localCollected')
+    const src = contactSourcesStore.sources.find(s => s.id === sel)
+    return src?.name || $_('contacts.list.header')
+  })
 </script>
 
 <div class="flex-1 min-w-0 min-h-0 flex flex-col border-r border-border bg-background">
-  <!-- Header / toolbar -->
-  <div class="flex items-center justify-between px-4 py-3 border-b border-border">
-    <div class="flex items-center gap-2 flex-1 min-w-0">
-      <ResponsiveSidebarToggle />
-      {#if showSearch}
-        <div class="flex items-center gap-1 bg-muted rounded-md px-2 flex-1 min-w-0">
-          <Icon icon="mdi:magnify" class="w-4 h-4 text-muted-foreground flex-shrink-0" />
-          <input
-            bind:this={searchInputEl}
-            type="text"
-            placeholder={$_('contacts.list.searchPlaceholder')}
-            class="bg-transparent border-none outline-none text-sm py-1.5 w-full min-w-[200px] text-foreground"
-            value={searchInput}
-            oninput={onSearchInput}
-            onkeydown={handleSearchKeydown}
-          />
-          {#if searchInput}
-            <button
-              onclick={clearSearch}
-              class="p-0.5 hover:bg-muted-foreground/20 rounded"
-              title={$_('contacts.list.searchClear')}
-              type="button"
-            >
-              <Icon icon="mdi:close" class="w-4 h-4 text-muted-foreground" />
-            </button>
-          {/if}
-        </div>
-      {:else}
-        <h2 class="font-semibold text-foreground truncate">{$_('contacts.list.header')}</h2>
-        <span class="text-sm text-muted-foreground flex-shrink-0">
-          {contactsView.contacts.length}
-        </span>
-      {/if}
-    </div>
-    <div class="flex items-center gap-1 flex-shrink-0">
+  <ListHeader
+    label={headerLabel}
+    count={contactsView.contacts.length}
+    searchMode={showSearch}
+  >
+    {#snippet search()}
+      <div class="flex items-center gap-1 bg-muted rounded-md px-2 flex-1 min-w-0">
+        <Icon icon="mdi:magnify" class="w-4 h-4 text-muted-foreground flex-shrink-0" />
+        <input
+          bind:this={searchInputEl}
+          type="text"
+          placeholder={$_('contacts.list.searchPlaceholder')}
+          class="bg-transparent border-none outline-none text-sm py-1.5 w-full min-w-[200px] text-foreground"
+          value={searchInput}
+          oninput={onSearchInput}
+          onkeydown={handleSearchKeydown}
+        />
+        {#if searchInput}
+          <button
+            onclick={clearSearch}
+            class="p-0.5 hover:bg-muted-foreground/20 rounded"
+            title={$_('contacts.list.searchClear')}
+            type="button"
+          >
+            <Icon icon="mdi:close" class="w-4 h-4 text-muted-foreground" />
+          </button>
+        {/if}
+      </div>
+    {/snippet}
+
+    {#snippet actions()}
       <button
         class="p-2 rounded-md hover:bg-muted transition-colors {showSearch ? 'bg-muted' : ''}"
         title={showSearch ? $_('contacts.list.searchClose') : $_('contacts.list.searchOpen')}
@@ -226,8 +238,8 @@
           <Icon icon="mdi:plus" class="w-5 h-5 text-muted-foreground" />
         </button>
       {/if}
-    </div>
-  </div>
+    {/snippet}
+  </ListHeader>
 
   <ListPane
     items={sortedContacts}
