@@ -1,12 +1,12 @@
 <!--
   ContactEditDialog — multi-field Edit dialog for local + CardDAV contacts.
 
-  Phase 2b.2.b.2. Single scrolling form whose order matches the detail pane
-  (familiar). Curated TYPE dropdowns via TypeSelect kit primitive with a
-  "Custom…" override. PHOTO section at top with file picker + 256×256 auto-
-  resize via Canvas (caps DB bloat at ~25KB per contact). vCard 3.0 FN
-  (display name) is the only hard requirement — phone-only / address-only
-  contacts are valid, matching real-world phone-imported CardDAV records.
+  Single scrolling form whose order matches the detail pane (familiar).
+  Curated TYPE dropdowns via TypeSelect kit primitive with a "Custom…"
+  override. PHOTO section at top with file picker + 256×256 auto-resize
+  via Canvas (caps DB bloat at ~25KB per contact). vCard 3.0 FN (display
+  name) is the only hard requirement — phone-only / address-only contacts
+  are valid, matching real-world phone-imported CardDAV records.
 -->
 <script lang="ts">
   import { _ } from 'svelte-i18n'

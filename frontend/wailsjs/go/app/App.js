@@ -70,10 +70,6 @@ export function CheckRecipientPGPKeys(arg1) {
   return window['go']['app']['App']['CheckRecipientPGPKeys'](arg1);
 }
 
-export function ClearContactSourceError(arg1) {
-  return window['go']['app']['App']['ClearContactSourceError'](arg1);
-}
-
 export function ClearOAuthCreds(arg1) {
   return window['go']['app']['App']['ClearOAuthCreds'](arg1);
 }

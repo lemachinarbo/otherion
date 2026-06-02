@@ -6,7 +6,6 @@ import {
   SyncContactSource,
   SyncAllContactSources,
   DeleteContactSource,
-  ClearContactSourceError,
   GetLinkedAccountsForContactSync,
   LinkAccountContactSource,
   StartContactsOnlyOAuthFlow,
@@ -75,16 +74,6 @@ function createContactSourcesStore() {
     }
   }
 
-  async function clearError(sourceId: string) {
-    try {
-      await ClearContactSourceError(sourceId)
-      await load()
-    } catch (err) {
-      console.error('Failed to clear contact source error:', err)
-      throw err
-    }
-  }
-
   // Get email accounts that can be linked for contact sync
   async function getLinkedAccounts(): Promise<app.LinkedAccountInfo[]> {
     try {
@@ -149,14 +138,12 @@ function createContactSourcesStore() {
     get errors() { return errors },
     get loading() { return loading },
     get hasErrors() { return errors.length > 0 },
-    get errorCount() { return errors.length },
 
     load,
     refresh,
     syncSource,
     syncAll,
     deleteSource,
-    clearError,
     getLinkedAccounts,
     linkAccount,
     startOAuthFlow,

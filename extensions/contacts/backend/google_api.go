@@ -25,11 +25,11 @@ import (
 // microsoft_api.go. Keeping per-provider write logic in dedicated files makes
 // it obvious which API surface each function targets.
 
-// googleWriteScope is the People API scope we request for write paths. Phase
-// 2b.3's manifest lists ONLY readonly scopes under first_party_uses_core_for_scopes,
+// googleWriteScope is the People API scope we request for write paths. The
+// manifest lists ONLY readonly scopes under first_party_uses_core_for_scopes,
 // so this scope routes through the `google-contacts` per-extension OAuth slot
-// and triggers ErrAdditionalConsentRequired on first call — caught by the
-// frontend wrapper, which prompts the consent dialog and retries.
+// and triggers ErrAdditionalConsentRequired on first call — surfaced to the
+// user by the WriteAccessAccountPicker flow before any write reaches here.
 const googleWriteScope = "https://www.googleapis.com/auth/contacts"
 
 // googleReadScope is the readonly scope used by listGoogleAddressbooks. It's
@@ -77,8 +77,8 @@ func (a *API) createGoogleContact(input coreapi.ContactCreateInput, email string
 		{Resource: googleWriteScope, Reason: "Create contacts in your Google account"},
 	})
 	if err != nil {
-		// ErrAdditionalConsentRequired flows up — bridge translates to
-		// ConsentRequiredError JSON for the frontend wrapper.
+		// ErrAdditionalConsentRequired flows up — the write-access grant
+		// flow is the user-facing surface that resolves it.
 		return "", err
 	}
 

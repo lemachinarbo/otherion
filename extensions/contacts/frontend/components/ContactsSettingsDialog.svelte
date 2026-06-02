@@ -2,14 +2,10 @@
   // ContactsSettingsDialog — the Contacts extension's own settings dialog.
   // Holds the extension's OAuth Credentials section (per-extension slots:
   // google-contacts, microsoft-contacts) and the Write Access section
-  // (per-OAuth-source consent buttons) for Phase 2b.3.
+  // (per-OAuth-source enable/disable buttons; OAuth sources route through
+  // the WriteAccessAccountPicker flow).
   //
-  // Opens via:
-  //  (1) Settings → Extensions → Edit button on the Contacts row
-  //  (2) ContactsPane's auto-detect on mount when a writable source lacks
-  //      the corresponding extension OAuth creds (future, 2b.3)
-  //
-  // Both entry paths share this single dialog component.
+  // Opens via Settings → Extensions → Edit button on the Contacts row.
 
   import { _ } from 'svelte-i18n'
   import Icon from '@iconify/svelte'
@@ -31,10 +27,11 @@
 
   let { open = $bindable(false), onClose }: Props = $props()
 
-  // Per-source consent-in-flight state. Keyed by source id so multiple buttons
-  // can show spinners independently if the user clicks more than one before
-  // the first finishes.
-  let pendingConsent = $state<Record<string, boolean>>({})
+  // Per-source write-access toggle in-flight state. Keyed by source id so
+  // multiple buttons can show spinners independently if the user clicks more
+  // than one before the first finishes. Only used for CardDAV's direct
+  // writable-flag flip; the OAuth picker manages its own granting state.
+  let pendingWriteAccess = $state<Record<string, boolean>>({})
 
   // Picker state — only one picker open at a time.
   let pickerOpen = $state(false)
@@ -43,8 +40,8 @@
   let pickerSourceName = $state('')
 
   // Refresh the source list whenever the dialog opens — the user may have
-  // added/removed sources since last open, or another consent flow may have
-  // flipped writable. Cheap (single Wails call returning a small array).
+  // added/removed sources since last open, or the write-access picker may
+  // have flipped writable. Cheap (single Wails call returning a small array).
   $effect(() => {
     if (open) {
       void contactSourcesStore.load()
@@ -70,11 +67,11 @@
   // SetContactSourceWritable(id, false) — works for all three external
   // source types. Note: for Google/Microsoft this does NOT revoke the OAuth
   // token at the provider; it just stops Aerion from using it. If the user
-  // re-enables later, the existing token is reused if still valid, so no
-  // second consent flow fires. To fully revoke, the user goes to the
-  // provider's account settings.
+  // re-enables later, the existing token is reused if still valid, so the
+  // write-access picker won't need to re-grant. To fully revoke, the user
+  // goes to the provider's account settings.
   async function disableWriteAccess(source: v1.ContactSource) {
-    pendingConsent[source.id] = true
+    pendingWriteAccess[source.id] = true
     try {
       await SetContactSourceWritable(source.id, false)
       await contactSourcesStore.load()
@@ -83,7 +80,7 @@
       console.error('Disable write access failed:', err)
       toasts.error((err as Error)?.message ?? $_('contacts.settings.writeAccessDisableFailed'))
     } finally {
-      delete pendingConsent[source.id]
+      delete pendingWriteAccess[source.id]
     }
   }
 
@@ -94,7 +91,7 @@
   // on confirm.
   async function enableWriteAccess(source: v1.ContactSource) {
     if (source.type === 'carddav') {
-      pendingConsent[source.id] = true
+      pendingWriteAccess[source.id] = true
       try {
         await SetContactSourceWritable(source.id, true)
         await contactSourcesStore.load()
@@ -103,7 +100,7 @@
         console.error('Enable write access failed:', err)
         toasts.error((err as Error)?.message ?? $_('contacts.settings.writeAccessCanceled'))
       } finally {
-        delete pendingConsent[source.id]
+        delete pendingWriteAccess[source.id]
       }
       return
     }
@@ -184,9 +181,9 @@
                     size="sm"
                     variant="outline"
                     onclick={() => disableWriteAccess(source)}
-                    disabled={pendingConsent[source.id]}
+                    disabled={pendingWriteAccess[source.id]}
                   >
-                    {#if pendingConsent[source.id]}
+                    {#if pendingWriteAccess[source.id]}
                       <Icon icon="mdi:loading" class="w-4 h-4 mr-1 animate-spin" />
                     {/if}
                     {$_('contacts.settings.disableWriteAccess')}
@@ -195,9 +192,9 @@
                   <Button
                     size="sm"
                     onclick={() => enableWriteAccess(source)}
-                    disabled={pendingConsent[source.id]}
+                    disabled={pendingWriteAccess[source.id]}
                   >
-                    {#if pendingConsent[source.id]}
+                    {#if pendingWriteAccess[source.id]}
                       <Icon icon="mdi:loading" class="w-4 h-4 mr-1 animate-spin" />
                     {/if}
                     {$_('contacts.settings.enableWriteAccess')}

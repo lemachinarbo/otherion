@@ -230,11 +230,6 @@ func (a *App) GetContactSourceErrors() ([]*carddav.SourceError, error) {
 	return a.carddavStore.GetSourcesWithErrors()
 }
 
-// ClearContactSourceError clears the error for a source
-func (a *App) ClearContactSourceError(id string) error {
-	return a.carddavStore.ClearSourceError(id)
-}
-
 // GetContactSourceStats returns statistics for contact sources
 func (a *App) GetContactSourceStats() (map[string]interface{}, error) {
 	sources, err := a.carddavStore.ListSources()

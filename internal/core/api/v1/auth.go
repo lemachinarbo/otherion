@@ -54,10 +54,11 @@ type SMTPClient = any
 // access tokens, refresh tokens, or passwords. Token refresh is transparent.
 //
 // Routing: the broker resolves the right ClientConfigID for the requested
-// scopes (e.g., calendar scopes route to "google-extensions"). If the account
-// lacks tokens covering those scopes under the target ClientConfigID, the
-// broker returns ErrAdditionalConsentRequired and the host triggers an
-// incremental-consent flow.
+// scopes (e.g., contacts-write scopes route to "google-contacts"; calendar
+// scopes to "google-calendar"). If the account lacks tokens covering those
+// scopes under the target ClientConfigID, the broker returns
+// ErrAdditionalConsentRequired and the extension drives the user-facing
+// grant flow (e.g., WriteAccessAccountPicker for contacts).
 type Auth interface {
 	// HTTPClient returns an *http.Client with bearer token injection and
 	// transparent refresh-on-401. The extension calls the client normally.

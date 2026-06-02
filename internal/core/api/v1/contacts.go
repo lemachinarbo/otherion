@@ -128,8 +128,9 @@ type ContactSource struct {
 // All methods scoped to data the extension manages — local contact store +
 // per-source mirror tables. Write methods dispatch by source under the hood:
 // local (sent-recipient) contacts mutate through the host's contact.Store;
-// CardDAV / Google / Microsoft writes are scoped to their per-extension OAuth
-// path (Phase 2b.2 / 2b.3) and return ErrUnimplemented until those land.
+// CardDAV writes hit the server's WebDAV endpoint; Google / Microsoft writes
+// go through their per-extension OAuth slot (granted via the write-access
+// account picker flow).
 type Contacts interface {
 	SearchContacts(query string, limit int) ([]Contact, error)
 	GetContact(emailOrID string) (*Contact, error)

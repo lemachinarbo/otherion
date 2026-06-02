@@ -127,11 +127,9 @@
       "title": "Contacts settings",
       "description": "Configure OAuth credentials for the Contacts extension. Read access rides on your mail account's existing permission; these creds power WRITE operations (edit / create / delete) against Google or Microsoft sources.",
       "oauthHeading": "OAuth Credentials",
-      "oauthDescription": "Aerion ships verified credentials when available. Override with your own project's credentials, or copy from Aerion's Mail slot if your mail project already covers the Contacts.ReadWrite scope.",
+      "oauthDescription": "Each slot ships with Aerion's verified credentials when available; switch to Custom to supply your own project's Client ID and Secret.",
       "googleLabel": "Google Contacts",
       "microsoftLabel": "Microsoft Contacts",
-      "copyFromGoogle": "Google Mail",
-      "copyFromMicrosoft": "Microsoft Mail",
       "writeAccessHeading": "Write Access",
       "writeAccessDescription": "Enable or disable write permission on a contact source. CardDAV sources only need the toggle. Google and Microsoft also need a one-time OAuth consent to enable.",
       "writeAccessRowSubtitle": "Read-only — write access not enabled",
@@ -142,9 +140,6 @@
       "writeAccessDisabled": "Write access disabled for {name}",
       "writeAccessDisableFailed": "Failed to disable write access",
       "writeAccessCanceled": "Write access not enabled",
-      "writeAccessNoAccount": "Cannot enable write access — source has no linked account",
-      "googleScopeReason": "Create, edit, and delete contacts in your Google account",
-      "microsoftScopeReason": "Create, edit, and delete contacts in your Microsoft account",
       "close": "Close"
     },
     "hook": {

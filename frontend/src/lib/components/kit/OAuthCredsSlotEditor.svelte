@@ -10,8 +10,6 @@
   //   label               — display name (e.g., "Google Mail")
   //   secretRequired      — whether the slot needs a client_secret (true for
   //                         Google; false for Microsoft / PKCE)
-  //   onChanged           — fired after a successful save/clear so the parent
-  //                         can refresh its own state if needed.
   //
   // UX:
   //   Single dropdown picks the source of credentials for this slot:
@@ -43,10 +41,9 @@
     configID: string
     label: string
     secretRequired?: boolean
-    onChanged?: () => void
   }
 
-  const { configID, label, secretRequired = true, onChanged }: Props = $props()
+  const { configID, label, secretRequired = true }: Props = $props()
 
   type SourceMode = 'custom' | 'aerion-shipped'
 
@@ -116,7 +113,6 @@
       await ClearOAuthCreds(configID)
       toasts.success(`${label} is now using Aerion's credentials`)
       await refresh()
-      onChanged?.()
     } catch (err) {
       console.error('Failed to switch to Aerion-shipped creds:', err)
       toasts.error(`Failed to switch credentials: ${(err as Error)?.message ?? err}`)
@@ -140,7 +136,6 @@
       clientID = ''
       clientSecret = ''
       await refresh()
-      onChanged?.()
     } catch (err) {
       console.error('Failed to save OAuth creds:', err)
       toasts.error('Failed to save credentials')

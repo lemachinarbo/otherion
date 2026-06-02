@@ -53,8 +53,6 @@ export function CheckRecipientCerts(arg1:Array<string>):Promise<Record<string, b
 
 export function CheckRecipientPGPKeys(arg1:Array<string>):Promise<Record<string, boolean>>;
 
-export function ClearContactSourceError(arg1:string):Promise<void>;
-
 export function ClearOAuthCreds(arg1:string):Promise<void>;
 
 export function CloseWindow():Promise<void>;

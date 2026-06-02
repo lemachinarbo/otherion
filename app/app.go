@@ -383,7 +383,7 @@ func StartupDialogInfoFor(err error) StartupDialogInfo {
 // Wails window is shown: logging init, platform paths, directory creation,
 // database open + migration, credential store init, and OAuth override
 // wiring. Returns an error on any failure; main.go is responsible for
-// surfacing the failure to the user (via StartupDialogText + a native
+// surfacing the failure to the user (via StartupDialogInfoFor + a native
 // dialog) and exiting before wails.Run is called.
 //
 // Splitting these steps out of Startup is intentional: Wails calls Startup

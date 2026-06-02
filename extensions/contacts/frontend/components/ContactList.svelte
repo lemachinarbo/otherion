@@ -10,8 +10,8 @@
   //
   // Sort is local component state (A-Z / Z-A). Lists are small enough that
   // sorting client-side via $derived is cheaper than a backend round-trip.
-  // Filter UI is intentionally omitted in Phase 2a — comes when contacts
-  // gains tags/groups in a later phase.
+  // Filter UI is intentionally omitted — comes when contacts gains tags or
+  // groups in a later phase.
 
   import Icon from '@iconify/svelte'
   import { _ } from 'svelte-i18n'

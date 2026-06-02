@@ -27,10 +27,9 @@
     sourceID: string
     sourceName: string
     onCompleted?: () => void
-    onClose?: () => void
   }
 
-  let { open = $bindable(false), provider, sourceID, sourceName, onCompleted, onClose }: Props = $props()
+  let { open = $bindable(false), provider, sourceID, sourceName, onCompleted }: Props = $props()
 
   let contexts = $state<app.AuthContextInfo[]>([])
   let loading = $state(false)
@@ -82,7 +81,6 @@
   function close() {
     if (granting) return
     open = false
-    onClose?.()
   }
 
   async function confirm() {
