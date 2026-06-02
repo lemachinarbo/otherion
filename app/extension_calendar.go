@@ -3,24 +3,25 @@ package app
 import (
 	"github.com/hkdb/aerion/extensions/calendar"
 	extcalendarbe "github.com/hkdb/aerion/extensions/calendar/backend"
-	"github.com/hkdb/aerion/internal/logging"
 	"github.com/hkdb/aerion/internal/oauth2"
 )
 
 // initCalendarExtension wires the Calendar extension's Bridge into App
-// during Startup. All bridge logic lives in extensions/calendar/backend/
-// bridge.go; this file exists ONLY so the host can supply the bridge with
-// its host-provided dependencies (settings store, paths, db, core handle)
+// during Startup. All bridge logic lives in extensions/calendar/backend/;
+// this file exists ONLY so the host can supply the bridge with its
+// host-provided dependencies (settings store, paths, db, coreapi handle)
 // and so the embedded-field promotion makes the bridge methods Wails-bindable.
 //
-// The bridge holds the extension disabled-by-default; no calendar sync runs
-// until the user enables Calendar in Settings. The per-extension SQLite is
-// opened eagerly (Store init) so the schema stays valid across enable/disable
-// cycles — same pattern Contacts uses.
+// Lightweight-by-default invariant: the Bridge struct allocation is the
+// entire footprint until the first enabled `Calendar_*` Wails call. At
+// that point, `CalendarBridge.ensureInit()` opens the per-extension
+// SQLite, applies pending migrations, and constructs the `API`. Disabled
+// extensions contribute zero work.
 //
-// Phase 1A is plumbing only; the bridge has a single Calendar_HealthCheck
-// method. Real Wails methods (source CRUD, event queries, sync triggers)
-// land in 1B and 1C.
+// Per docs/EXT_RULES.md R2, this file holds NO closures wrapping
+// `internal/*` calls. The calendar extension's only host touchpoints are
+// the standard `coreapi.Core` surfaces (Storage.Secrets for the CalDAV
+// password, UI for the rail tab + settings tab).
 func (a *App) initCalendarExtension() {
 	calendarCore := newCoreForExtension(a, a.calendarExt)
 
@@ -30,20 +31,6 @@ func (a *App) initCalendarExtension() {
 		DB:            a.db,
 		Core:          calendarCore,
 	})
-
-	// Eagerly open the per-extension SQLite so the schema is valid across
-	// enable/disable cycles. Same eager-open pattern Contacts uses for its
-	// Store. The Bridge itself stays lazy (initOnce inside ensureInit).
-	store, err := extcalendarbe.NewStore(a.paths.Data)
-	if err != nil {
-		log := logging.WithComponent("app")
-		log.Warn().Err(err).Msg("Failed to open calendar extension store")
-		// Non-fatal — extension stays disabled functionally but UI tab still
-		// renders the placeholder state. Same failure mode Contacts has if
-		// its store fails to open.
-		return
-	}
-	a.calendarStore = store
 
 	// Register the extension's declared OAuth client configs with the global
 	// resolver. Phase 1A: both slots have empty client IDs (unless ldflag-

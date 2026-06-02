@@ -92,7 +92,8 @@ func (stubUI) RegisterAccountSetupHook(AccountSetupHookRequest) (Unregister, err
 
 type stubStorage struct{}
 
-func (stubStorage) KV(string) KVStore { return stubKV{} }
+func (stubStorage) KV(string) KVStore         { return stubKV{} }
+func (stubStorage) Secrets(string) Secrets    { return stubSecrets{} }
 
 type stubKV struct{}
 
@@ -100,6 +101,13 @@ func (stubKV) Get(string) (string, error)        { return "", ErrUnimplemented }
 func (stubKV) Set(string, string) error          { return ErrUnimplemented }
 func (stubKV) Delete(string) error               { return ErrUnimplemented }
 func (stubKV) List(string) ([]string, error)     { return nil, ErrUnimplemented }
+
+type stubSecrets struct{}
+
+func (stubSecrets) Set(string, string) error { return ErrUnimplemented }
+func (stubSecrets) Get(string) (string, error) { return "", ErrUnimplemented }
+func (stubSecrets) Delete(string) error      { return ErrUnimplemented }
+func (stubSecrets) DeleteAll() error         { return ErrUnimplemented }
 
 type stubEvents struct{}
 

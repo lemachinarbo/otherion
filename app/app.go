@@ -242,7 +242,6 @@ type App struct {
 	uiRegistry       *extui.Registry      // coreapi.UI impl: rail tabs, account-setup hooks, ...
 	contactsExt      *extcontactsbe.Extension // Contacts lifecycle handle (manifest + Register only)
 	calendarExt      *extcalendarbe.Extension // Calendar lifecycle handle (manifest + Register only)
-	calendarStore    *extcalendarbe.Store     // per-extension SQLite, opened eagerly so schema stays valid across enable/disable
 	knownExtensions  []coreapi.Extension      // all first-party extensions, iterated by ListExtensions
 	extensionUnregs  []coreapi.Unregister     // teardown funcs returned from each Extension.Register
 

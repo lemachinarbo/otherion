@@ -700,6 +700,36 @@ export namespace appstate {
 
 export namespace backend {
 	
+	export class Calendar {
+	    id: string;
+	    sourceId: string;
+	    url: string;
+	    displayName: string;
+	    description?: string;
+	    color?: string;
+	    visible: boolean;
+	    ctag?: string;
+	    lastSyncedAt: number;
+	    createdAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Calendar(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.sourceId = source["sourceId"];
+	        this.url = source["url"];
+	        this.displayName = source["displayName"];
+	        this.description = source["description"];
+	        this.color = source["color"];
+	        this.visible = source["visible"];
+	        this.ctag = source["ctag"];
+	        this.lastSyncedAt = source["lastSyncedAt"];
+	        this.createdAt = source["createdAt"];
+	    }
+	}
 	export class ResizedContactPhoto {
 	    data: string;
 	    mediaType: string;
@@ -712,6 +742,40 @@ export namespace backend {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.data = source["data"];
 	        this.mediaType = source["mediaType"];
+	    }
+	}
+	export class Source {
+	    id: string;
+	    type: string;
+	    name: string;
+	    url: string;
+	    username: string;
+	    syncIntervalMin: number;
+	    lastSyncedAt: number;
+	    lastError?: string;
+	    lastErrorAt?: number;
+	    accountId?: string;
+	    enabled: boolean;
+	    createdAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Source(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.type = source["type"];
+	        this.name = source["name"];
+	        this.url = source["url"];
+	        this.username = source["username"];
+	        this.syncIntervalMin = source["syncIntervalMin"];
+	        this.lastSyncedAt = source["lastSyncedAt"];
+	        this.lastError = source["lastError"];
+	        this.lastErrorAt = source["lastErrorAt"];
+	        this.accountId = source["accountId"];
+	        this.enabled = source["enabled"];
+	        this.createdAt = source["createdAt"];
 	    }
 	}
 

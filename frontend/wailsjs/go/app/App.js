@@ -38,8 +38,20 @@ export function BroadcastThemeChange(arg1) {
   return window['go']['app']['App']['BroadcastThemeChange'](arg1);
 }
 
-export function Calendar_HealthCheck() {
-  return window['go']['app']['App']['Calendar_HealthCheck']();
+export function Calendar_AddCalDAVSource(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['Calendar_AddCalDAVSource'](arg1, arg2, arg3, arg4);
+}
+
+export function Calendar_DeleteSource(arg1) {
+  return window['go']['app']['App']['Calendar_DeleteSource'](arg1);
+}
+
+export function Calendar_ListCalendars(arg1) {
+  return window['go']['app']['App']['Calendar_ListCalendars'](arg1);
+}
+
+export function Calendar_ListSources() {
+  return window['go']['app']['App']['Calendar_ListSources']();
 }
 
 export function CanUndo() {

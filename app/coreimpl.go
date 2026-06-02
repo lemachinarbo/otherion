@@ -146,7 +146,7 @@ func (c *coreImpl) Auth() coreapi.Auth {
 }
 func (c *coreImpl) UI() coreapi.UI                       { return c.app.uiRegistry }
 func (c *coreImpl) Notifications() coreapi.Notifications { return stubNotifications{} }
-func (c *coreImpl) Storage() coreapi.Storage             { return stubStorage{} }
+func (c *coreImpl) Storage() coreapi.Storage             { return storageCoreImpl{app: c.app} }
 func (c *coreImpl) Events() coreapi.EventBus             { return stubEventBus{} }
 
 // Extension returns the typed handle published by another extension via its
@@ -310,10 +310,58 @@ func (stubNotifications) Show(req coreapi.NotifyRequest) error {
 	return coreapi.ErrUnimplemented
 }
 
-type stubStorage struct{}
+// storageCoreImpl is the host implementation of coreapi.Storage. KV is still
+// a not-implemented stub (extensions open their own SQLite); Secrets is
+// fully wired, delegating to credentials.Store for the keyring + AES-fallback
+// orchestration so extensions can stash sensitive values without ever
+// importing internal/credentials.
+type storageCoreImpl struct {
+	app *App
+}
 
-func (stubStorage) KV(extensionID string) coreapi.KVStore {
+func (s storageCoreImpl) KV(extensionID string) coreapi.KVStore {
 	return stubKV{extensionID: extensionID}
+}
+
+func (s storageCoreImpl) Secrets(extensionID string) coreapi.Secrets {
+	return secretsCoreImpl{app: s.app, extensionID: extensionID}
+}
+
+// secretsCoreImpl is the per-extension Secrets handle. The extension ID is
+// captured here so the extension's bridge code only types `core.Storage().
+// Secrets(extensionID).Set(key, value)` once — the handle remembers the
+// scope for subsequent calls.
+type secretsCoreImpl struct {
+	app         *App
+	extensionID string
+}
+
+func (s secretsCoreImpl) Set(key, value string) error {
+	if s.app.credStore == nil {
+		return fmt.Errorf("storage.Secrets: credentials store not initialized")
+	}
+	return s.app.credStore.SetExtensionSecret(s.extensionID, key, value)
+}
+
+func (s secretsCoreImpl) Get(key string) (string, error) {
+	if s.app.credStore == nil {
+		return "", fmt.Errorf("storage.Secrets: credentials store not initialized")
+	}
+	return s.app.credStore.GetExtensionSecret(s.extensionID, key)
+}
+
+func (s secretsCoreImpl) Delete(key string) error {
+	if s.app.credStore == nil {
+		return fmt.Errorf("storage.Secrets: credentials store not initialized")
+	}
+	return s.app.credStore.DeleteExtensionSecret(s.extensionID, key)
+}
+
+func (s secretsCoreImpl) DeleteAll() error {
+	if s.app.credStore == nil {
+		return fmt.Errorf("storage.Secrets: credentials store not initialized")
+	}
+	return s.app.credStore.DeleteAllExtensionSecrets(s.extensionID)
 }
 
 type stubKV struct {

@@ -1174,4 +1174,34 @@ var migrations = []Migration{
 			ALTER TABLE contact_records ADD COLUMN photo_url TEXT;
 		`,
 	},
+	{
+		Version: 35,
+		SQL: `
+			-- Phase 1B of the Calendar extension introduces the shared
+			-- coreapi.Storage.Secrets surface — any first-party extension
+			-- can stash per-extension secrets via core without each one
+			-- adding its own credentials plumbing.
+			--
+			-- This table tracks ALL extension secret keys regardless of
+			-- where the value actually lives. The encrypted_value column
+			-- encodes location: '' (empty) = "lives in OS keyring at
+			-- ext:<extension>:<key>"; non-empty = "AES-encrypted base64
+			-- ciphertext is right here." Tracking keyring-stored keys in
+			-- the table is what lets DeleteAllExtensionSecrets enumerate
+			-- the matching keyring entries for cleanup on uninstall.
+			--
+			-- Owned by core. Not extension-specific (despite the column
+			-- name). New extensions opt in via core.Storage().Secrets()
+			-- and get keyring-first + table-fallback for free.
+
+			CREATE TABLE IF NOT EXISTS extension_secrets (
+				extension       TEXT NOT NULL,
+				key             TEXT NOT NULL,
+				encrypted_value TEXT NOT NULL DEFAULT '',
+				created_at      INTEGER NOT NULL,
+				PRIMARY KEY (extension, key)
+			);
+			CREATE INDEX IF NOT EXISTS idx_extension_secrets_ext ON extension_secrets(extension);
+		`,
+	},
 }

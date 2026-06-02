@@ -3,8 +3,8 @@
 import {certificate} from '../models';
 import {account} from '../models';
 import {carddav} from '../models';
-import {v1} from '../models';
 import {backend} from '../models';
+import {v1} from '../models';
 import {message} from '../models';
 import {folder} from '../models';
 import {app} from '../models';
@@ -37,7 +37,13 @@ export function Archive(arg1:Array<string>):Promise<void>;
 
 export function BroadcastThemeChange(arg1:string):Promise<void>;
 
-export function Calendar_HealthCheck():Promise<string>;
+export function Calendar_AddCalDAVSource(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
+
+export function Calendar_DeleteSource(arg1:string):Promise<void>;
+
+export function Calendar_ListCalendars(arg1:string):Promise<Array<backend.Calendar>>;
+
+export function Calendar_ListSources():Promise<Array<backend.Source>>;
 
 export function CanUndo():Promise<boolean>;
 

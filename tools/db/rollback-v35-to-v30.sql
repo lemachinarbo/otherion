@@ -1,19 +1,20 @@
--- Aerion: rollback the v0.3.0 schema (migrations 31 + 32 + 33 + 34) back to v0.2.5 (v30).
+-- Aerion: rollback the v0.3.0 schema (migrations 31 + 32 + 33 + 34 + 35) back to v0.2.5 (v30).
 --
 -- This script reconstructs the v30 schema (`contacts` + `carddav_contacts` tables)
--- from the v34 unified schema (`contact_records` + `contact_emails` + sidecars)
--- via JOINs. No external backup file is needed — the unified schema IS the data;
+-- from the v35 schema (`contact_records` + `contact_emails` + sidecars +
+-- `extension_secrets`) via JOINs + DROP for the calendar-extension-secrets
+-- table. No external backup file is needed — the unified schema IS the data;
 -- the old shape is just a denormalized projection of it.
 --
 -- Aerion versions and the schemas they ship with:
 --   - v0.2.5 (last released) → schema v30 (separate `contacts`, `carddav_contacts`)
---   - v0.3.0 (upcoming)      → schema v34 (unified `contact_records` + UUID identity
+--   - v0.3.0 (upcoming)      → schema v35 (unified contact_records + UUID identity
 --                                          + carddav_record_state.addressbook_id FK
---                                          + PHOTO columns)
+--                                          + PHOTO columns + extension_secrets)
 --
--- v31, v32, v33 were intermediate development schemas that never shipped — no
--- real-world DB will ever be at any of them alone. The only rollback path that
--- matters is v34 → v30 (the released-to-released transition).
+-- v31, v32, v33, v34 were intermediate development schemas that never shipped —
+-- no real-world DB will ever be at any of them alone. The only rollback path
+-- that matters is v35 → v30 (the released-to-released transition).
 --
 -- Migrations bundled into the 0.3.0 cumulative jump:
 --   - 31: unified contact_records + multi-field sub-tables; replaced legacy
@@ -27,6 +28,11 @@
 --   - 34: first-class PHOTO field support — adds photo_data, photo_media_type,
 --     photo_url columns to contact_records so the parser/builder land vCard
 --     PHOTOs natively (no longer just round-tripping via vcard_raw).
+--   - 35: extension_secrets table — shared keyring + AES fallback for the
+--     coreapi.Storage.Secrets surface. First consumer is the Calendar
+--     extension (1B) for CalDAV passwords. Rolling back drops the table;
+--     keyring-stored entries are orphaned (the OS keyring is not touched by
+--     this SQL — clear them manually if needed).
 --
 -- Inherent data loss on rollback:
 --   - Multi-field data (phones, addresses, URLs, IMPPs, org, title, note, bday,
@@ -51,7 +57,7 @@
 --      (or whatever your DB path is — `~/Library/Application Support/Aerion/`
 --       on macOS, `%LOCALAPPDATA%\aerion\` on Windows).
 --   3. Run this script against your DB:
---        sqlite3 ~/.local/share/aerion/aerion.db < rollback-v34-to-v30.sql
+--        sqlite3 ~/.local/share/aerion/aerion.db < rollback-v35-to-v30.sql
 --   4. Launch the older Aerion (v0.2.5). It should start normally and your
 --      contacts autocomplete should work.
 --
@@ -134,10 +140,16 @@ DROP TABLE contact_phones;
 DROP TABLE contact_emails;
 DROP TABLE contact_records;
 
--- 6. Roll back the migration tracker so older Aerion doesn't think v31/v32/
---    v33/v34 have been applied. After this, older Aerion sees schema_version=30
---    and starts normally. The `>= 31` bound catches v31, v32, v33, AND v34 —
---    plus any future intermediate schemas, if one slipped in.
+-- 6. Drop the v35 extension_secrets table. Any extension secret values stored
+--    in this table (encrypted ciphertext) are lost. Keyring-stored entries
+--    are NOT touched by this SQL — clear them via the OS keyring manager
+--    (Seahorse / Keychain / Credential Manager) if you want a full cleanup.
+DROP TABLE IF EXISTS extension_secrets;
+
+-- 7. Roll back the migration tracker so older Aerion doesn't think v31/v32/
+--    v33/v34/v35 have been applied. After this, older Aerion sees
+--    schema_version=30 and starts normally. The `>= 31` bound catches all
+--    v0.3.0 migrations plus any future intermediate schemas.
 DELETE FROM migrations WHERE version >= 31;
 
 COMMIT;
