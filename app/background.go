@@ -419,10 +419,13 @@ func (a *App) processNetworkEvents(ctx context.Context) {
 			if event.Connected {
 				log.Info().Msg("Network connectivity restored — starting full sync")
 				wailsRuntime.EventsEmit(a.ctx, "network:online", nil)
+				// Bus event for Go-side subscribers (e.g., calendar Syncer).
+				_ = a.coreEventBus().Publish("system:network-online", nil)
 				a.syncAfterWake()
 			} else {
 				log.Info().Msg("Network connectivity lost — stopping IDLE and clearing pool")
 				wailsRuntime.EventsEmit(a.ctx, "network:offline", nil)
+				_ = a.coreEventBus().Publish("system:network-offline", nil)
 
 				if a.idleManager != nil {
 					a.idleManager.Stop()
@@ -505,6 +508,11 @@ func (a *App) handleSystemSleep() {
 		a.networkMonitor.Invalidate()
 	}
 
+	// Publish to the host EventBus so extensions can react (e.g., calendar's
+	// Syncer pauses its in-flight HTTPS calls to avoid stale TLS sessions).
+	// Lazy: bus stays uninitialized + zero-cost when no one subscribes.
+	_ = a.coreEventBus().Publish("system:sleep", nil)
+
 	log.Info().Msg("IMAP connections closed for sleep")
 }
 
@@ -534,6 +542,13 @@ func (a *App) handleSystemWake() {
 	}
 
 	wailsRuntime.EventsEmit(a.ctx, "network:online", nil)
+
+	// Publish to the host EventBus so extensions can sync on wake. Separate
+	// event name from `network:online` (which is the frontend-facing name);
+	// `system:wake` is the Go-side infrastructure signal. Lazy: bus stays
+	// uninitialized + zero-cost when no one subscribes.
+	_ = a.coreEventBus().Publish("system:wake", nil)
+
 	log.Info().Msg("Network available — syncing all accounts after wake")
 	a.syncAfterWake()
 }

@@ -1,8 +1,10 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"sync"
+	"time"
 
 	coreapi "github.com/hkdb/aerion/internal/core/api/v1"
 	"github.com/hkdb/aerion/internal/database"
@@ -30,11 +32,12 @@ import (
 type CalendarBridge struct {
 	deps CalendarBridgeDeps
 
-	// Lazy-initialized API. Constructed on first enabled bridge call so
-	// disabled extensions contribute zero work.
+	// Lazy-initialized API + Syncer. Constructed on first enabled bridge
+	// call so disabled extensions contribute zero work.
 	initOnce sync.Once
 	initErr  error
 	api      *API
+	syncer   *Syncer
 }
 
 // CalendarBridgeDeps bundles the host-provided dependencies the bridge needs.
@@ -125,6 +128,8 @@ func (b *CalendarBridge) ensureInit() error {
 
 		secrets := b.deps.Core.Storage().Secrets(extensionID)
 		b.api = NewAPI(store, secrets)
+		b.syncer = NewSyncer(store, secrets, b.deps.Core.Events(), b.deps.SettingsStore)
+		b.syncer.Start()
 	})
 	return b.initErr
 }
@@ -147,7 +152,14 @@ func (b *CalendarBridge) Calendar_AddCalDAVSource(name, url, username, password 
 	if err := b.ensureInit(); err != nil {
 		return "", err
 	}
-	return b.api.AddCalDAVSource(name, url, username, password)
+	sourceID, err := b.api.AddCalDAVSource(name, url, username, password)
+	if err != nil {
+		return "", err
+	}
+	// Hook the new source into the periodic sync ticker + fire an
+	// immediate sync in the background so events show up without waiting.
+	b.syncer.AddSource(sourceID, 15)
+	return sourceID, nil
 }
 
 // Calendar_ListSources returns all configured calendar sources. Returns
@@ -185,5 +197,145 @@ func (b *CalendarBridge) Calendar_DeleteSource(sourceID string) error {
 	if err := b.ensureInit(); err != nil {
 		return err
 	}
+	b.syncer.RemoveSource(sourceID)
 	return b.api.DeleteSource(sourceID)
+}
+
+// Calendar_SyncSource runs a single sync pass against the given source.
+// Returns when the sync finishes (success or failure). Errors are also
+// persisted on the source row + published via `calendar:source-error`.
+func (b *CalendarBridge) Calendar_SyncSource(sourceID string) error {
+	if !b.gateEnabled() {
+		return nil
+	}
+	if err := b.ensureInit(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	return b.syncer.SyncSource(ctx, sourceID)
+}
+
+// Calendar_SyncAllSources runs a sync pass against every configured
+// source sequentially. Per-source failures don't abort the loop.
+func (b *CalendarBridge) Calendar_SyncAllSources() error {
+	if !b.gateEnabled() {
+		return nil
+	}
+	if err := b.ensureInit(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	return b.syncer.SyncAllSources(ctx)
+}
+
+// Calendar_ListEventsInRange is the workhorse query for calendar views.
+// Expands recurring events into concrete occurrences within [fromUnix,
+// toUnix]. Honors per-calendar visibility (invisible calendars are
+// skipped). Result sorted by InstanceStartUnix.
+func (b *CalendarBridge) Calendar_ListEventsInRange(calendarIDs []string, fromUnix, toUnix int64) ([]EventInstance, error) {
+	if !b.gateEnabled() {
+		return nil, nil
+	}
+	if err := b.ensureInit(); err != nil {
+		return nil, err
+	}
+	if len(calendarIDs) == 0 {
+		return nil, nil
+	}
+
+	from := time.Unix(fromUnix, 0)
+	to := time.Unix(toUnix, 0)
+
+	// Filter to visible calendars. We could query the visible flag in
+	// SQL, but the row count is small enough that doing it in Go keeps
+	// the SQL simple.
+	visible := make([]string, 0, len(calendarIDs))
+	for _, sourceID := range listAllSourceIDs(b.api) {
+		cals, _ := b.api.ListCalendars(sourceID)
+		for _, cal := range cals {
+			if !cal.Visible {
+				continue
+			}
+			for _, want := range calendarIDs {
+				if cal.ID == want {
+					visible = append(visible, cal.ID)
+					break
+				}
+			}
+		}
+	}
+	if len(visible) == 0 {
+		return nil, nil
+	}
+
+	events, err := b.api.store.ListEventsForExpansion(visible)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []EventInstance
+	for _, ev := range events {
+		overrides, _ := b.api.store.ListOverrides(ev.ID)
+		instances, err := ExpandInRange(ev, overrides, from, to)
+		if err != nil {
+			// Skip the bad event rather than aborting the whole query.
+			continue
+		}
+		out = append(out, instances...)
+	}
+	return out, nil
+}
+
+// Calendar_GetEvent returns one event by ID. Used by the detail overlay
+// (Phase 1E) and other "show me this specific event" surfaces.
+func (b *CalendarBridge) Calendar_GetEvent(eventID string) (*Event, error) {
+	if !b.gateEnabled() {
+		return nil, nil
+	}
+	if err := b.ensureInit(); err != nil {
+		return nil, err
+	}
+	return b.api.store.GetEvent(eventID)
+}
+
+// Calendar_SetCalendarVisible toggles a calendar's visibility in the UI.
+// Cached events stay in the store; ListEventsInRange filters them out.
+func (b *CalendarBridge) Calendar_SetCalendarVisible(calendarID string, visible bool) error {
+	if !b.gateEnabled() {
+		return nil
+	}
+	if err := b.ensureInit(); err != nil {
+		return err
+	}
+	return b.api.store.SetCalendarVisible(calendarID, visible)
+}
+
+// Calendar_SetCalendarColor stores a hex color (`#rrggbb`) for a calendar.
+// Empty string clears the override.
+func (b *CalendarBridge) Calendar_SetCalendarColor(calendarID, hex string) error {
+	if !b.gateEnabled() {
+		return nil
+	}
+	if err := b.ensureInit(); err != nil {
+		return err
+	}
+	return b.api.store.SetCalendarColor(calendarID, hex)
+}
+
+// listAllSourceIDs is a tiny helper for Calendar_ListEventsInRange —
+// flattens "all sources' calendars" so we can intersect with the
+// caller's requested calendar IDs. Cheap because source count is small
+// in practice (<10 typical).
+func listAllSourceIDs(a *API) []string {
+	srcs, err := a.ListSources()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(srcs))
+	for _, s := range srcs {
+		out = append(out, s.ID)
+	}
+	return out
 }

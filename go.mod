@@ -35,7 +35,7 @@ require (
 	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/emersion/go-ical v0.0.0-20240127095438-fc1c9d8fb2b6 // indirect
+	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect

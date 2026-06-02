@@ -730,6 +730,84 @@ export namespace backend {
 	        this.createdAt = source["createdAt"];
 	    }
 	}
+	export class Event {
+	    id: string;
+	    calendarId: string;
+	    uid: string;
+	    etag: string;
+	    href: string;
+	    summary: string;
+	    description?: string;
+	    location?: string;
+	    dtstartUnix: number;
+	    dtendUnix: number;
+	    isAllDay: boolean;
+	    tzName?: string;
+	    rruleText?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Event(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.calendarId = source["calendarId"];
+	        this.uid = source["uid"];
+	        this.etag = source["etag"];
+	        this.href = source["href"];
+	        this.summary = source["summary"];
+	        this.description = source["description"];
+	        this.location = source["location"];
+	        this.dtstartUnix = source["dtstartUnix"];
+	        this.dtendUnix = source["dtendUnix"];
+	        this.isAllDay = source["isAllDay"];
+	        this.tzName = source["tzName"];
+	        this.rruleText = source["rruleText"];
+	    }
+	}
+	export class EventInstance {
+	    id: string;
+	    calendarId: string;
+	    uid: string;
+	    etag: string;
+	    href: string;
+	    summary: string;
+	    description?: string;
+	    location?: string;
+	    dtstartUnix: number;
+	    dtendUnix: number;
+	    isAllDay: boolean;
+	    tzName?: string;
+	    rruleText?: string;
+	    instanceStartUnix: number;
+	    instanceEndUnix: number;
+	    isRecurrenceOverride?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new EventInstance(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.calendarId = source["calendarId"];
+	        this.uid = source["uid"];
+	        this.etag = source["etag"];
+	        this.href = source["href"];
+	        this.summary = source["summary"];
+	        this.description = source["description"];
+	        this.location = source["location"];
+	        this.dtstartUnix = source["dtstartUnix"];
+	        this.dtendUnix = source["dtendUnix"];
+	        this.isAllDay = source["isAllDay"];
+	        this.tzName = source["tzName"];
+	        this.rruleText = source["rruleText"];
+	        this.instanceStartUnix = source["instanceStartUnix"];
+	        this.instanceEndUnix = source["instanceEndUnix"];
+	        this.isRecurrenceOverride = source["isRecurrenceOverride"];
+	    }
+	}
 	export class ResizedContactPhoto {
 	    data: string;
 	    mediaType: string;

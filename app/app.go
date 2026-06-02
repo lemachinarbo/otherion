@@ -245,6 +245,14 @@ type App struct {
 	knownExtensions  []coreapi.Extension      // all first-party extensions, iterated by ListExtensions
 	extensionUnregs  []coreapi.Unregister     // teardown funcs returned from each Extension.Register
 
+	// coreapi.EventBus implementation, lazily constructed on first
+	// Core.Events() call (via eventBusInitOnce). Extensions consume via
+	// core.Events().Publish / .Subscribe; the bus also tees to Wails
+	// frontend events. System-event wire-up (sleep/network → bus) inside
+	// the bus is also lazy — first system:* Subscribe triggers it.
+	eventBus         *eventBusCoreImpl
+	eventBusInitOnce goSync.Once
+
 	// S/MIME
 	smimeStore     *smime.Store
 	smimeSigner    *smime.Signer
