@@ -1215,7 +1215,7 @@ Extensions need to look and behave like the rest of Aerion — same keys, same f
 
 ### The 1-for-1 rule
 
-Every kit primitive (`Avatar`, `PaneLayout`, `ListPane`, `ListRow`, `ListHeader`, `ResponsiveSidebarToggle`, `SourceSidebar`, `SourceItem`, `SidebarAddItem`, `DetailPane`, `ConfirmDialog`, `OAuthCredsSlotEditor`, …) is a behavioral replica of how the equivalent functionality works in mail today: same key bindings, same focus semantics, same scroll-into-view, same edge-case behavior. The backwards-compat test: **if mail were ever refactored to consume the kit, the user should see zero difference**. If you can't pass that test on a kit primitive you're writing, you've diverged.
+Every kit primitive (`Avatar`, `PaneLayout`, `ListPane`, `ListRow`, `ListHeader`, `ResponsiveSidebarToggle`, `SourceSidebar`, `SourceItem`, `SidebarAddItem`, `DetailPane`, `ConfirmDialog`, `ColorPicker`, `OAuthCredsSlotEditor`, …) is a behavioral replica of how the equivalent functionality works in mail today: same key bindings, same focus semantics, same scroll-into-view, same edge-case behavior. The backwards-compat test: **if mail were ever refactored to consume the kit, the user should see zero difference**. If you can't pass that test on a kit primitive you're writing, you've diverged.
 
 **Greenfield exception (R25).** Some kit primitives have no mail equivalent — Calendar's `DetailOverlay`, for example, since mail's viewer is a flex-chain pane, not a fixed overlay. Per [`EXT_RULES.md` R25](./EXT_RULES.md), kit is an extension-driven SDK; when mail has no counterpart, the primitive is designed cleanly from the consumer's needs. The 1-for-1 rule applies to primitives that DO have a mail counterpart (`SidebarAddItem` ↔ mail's "+ Add Account" inline button, `ConfirmDialog` ↔ mail's confirms, etc.). Greenfield primitives are still bound by the kit's general conventions: theme tokens, density-aware sizing, layout-store responsive handling, `shortcuts.ts` predicates for keys, and **no imports from mail's `components/{list,sidebar,viewer}/` namespace**.
 
@@ -1542,6 +1542,26 @@ The dialog registers with [`dialogGuard`](../frontend/src/lib/stores/dialogGuard
 ```
 
 The bits-ui Root wrappers (`ui/dialog/Dialog`, `ui/alert-dialog/AlertDialog`) deliberately don't register on their own — the convention is "consumer owns it" so registration only happens when the dialog is actually open, not just rendered.
+
+#### `ColorPicker` — preset palette + hex input
+
+[`frontend/src/lib/components/kit/ColorPicker.svelte`](../frontend/src/lib/components/kit/ColorPicker.svelte)
+
+```svelte
+<ColorPicker
+  value={cal.color ?? ''}
+  onchange={(hex) => calendarSources.setColor(cal.id, hex)}
+/>
+```
+
+| Prop | Type | Notes |
+|---|---|---|
+| `value` | `string` | Current color as a 7-char hex (e.g. `"#3B82F6"`). Empty string is allowed and renders the first preset. |
+| `onchange` | `(color: string) => void` | Called whenever the user picks a preset or enters a valid hex (`/^#[0-9A-Fa-f]{6}$/`). Not called on partial / invalid input. |
+
+Thin pass-through to the host's [`ui/color-picker/ColorPicker.svelte`](../frontend/src/lib/components/ui/color-picker/ColorPicker.svelte) — the same component mail's [`AccountGeneralTab.svelte`](../frontend/src/lib/components/settings/account/AccountGeneralTab.svelte) and [`AccountForm.svelte`](../frontend/src/lib/components/settings/AccountForm.svelte) consume. 1-for-1 with mail's account-color picker: 8 preset swatches in a 4×2 grid, manual hex entry with auto-`#` prefix, popover dismisses on click-outside or Enter. Trigger button is `w-8 h-8` (fixed). Extensions consume the kit version so they don't reach into the host's `ui/` namespace; the host can swap the underlying primitive without breaking extensions.
+
+The host primitive's `aria.selectColor` and `aria.selectPresetColor` i18n keys are read from the core `aria.*` namespace at [`frontend/src/lib/i18n/locales/en.json`](../frontend/src/lib/i18n/locales/en.json) — extensions don't need to declare them.
 
 ### Extension keyboard shortcuts
 

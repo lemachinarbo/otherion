@@ -4,6 +4,7 @@
   import { Button } from '$lib/components/ui/button'
   import { Input } from '$lib/components/ui/input'
   import { Label } from '$lib/components/ui/label'
+  import ColorPicker from '$lib/components/kit/ColorPicker.svelte'
   import Icon from '@iconify/svelte'
   import { toasts } from '$lib/stores/toast'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
@@ -16,6 +17,14 @@
 
   let { open = $bindable(false), onClose }: Props = $props()
 
+  // Two-stage flow: 'form' (connection inputs) → 'colors' (per-calendar
+  // pickers, post-persist). Backend writes already happened by the time we
+  // enter 'colors'; per-row picker changes call Calendar_SetCalendarColor
+  // immediately. Closing during 'colors' just keeps whatever was picked so
+  // far (HSL fallback covers any calendars still at NULL color).
+  let stage = $state<'form' | 'colors'>('form')
+  let newSourceID = $state('')
+
   let nameInput = $state('')
   let urlInput = $state('')
   let usernameInput = $state('')
@@ -25,13 +34,22 @@
 
   $effect(() => {
     if (!open) return
-    // Reset form each time the dialog opens.
+    // Reset form + stage each time the dialog opens.
+    stage = 'form'
+    newSourceID = ''
     nameInput = ''
     urlInput = ''
     usernameInput = ''
     passwordInput = ''
     lastError = ''
     submitting = false
+  })
+
+  // Calendars discovered for the new source — populated after Stage 1 by
+  // calendarSources.addCalDAVSource → load(). Reactive on the store.
+  const discoveredCalendars = $derived.by(() => {
+    if (stage !== 'colors' || newSourceID === '') return []
+    return calendarSources.calendarsBySource[newSourceID] ?? []
   })
 
   // Register with the host's dialogGuard while open. Without this, mail's
@@ -76,22 +94,21 @@
     submitting = true
     lastError = ''
     try {
-      await calendarSources.addCalDAVSource(
+      const sourceID = await calendarSources.addCalDAVSource(
         nameInput.trim(),
         urlInput.trim(),
         usernameInput.trim(),
         passwordInput,
       )
-      // Find how many calendars were discovered for the new source so we
-      // can show a useful success toast. The list is already loaded by
-      // addCalDAVSource → load().
-      const newest = calendarSources.sources.find(s => s.name === nameInput.trim())
-      const count = newest ? (calendarSources.calendarsBySource[newest.id]?.length ?? 0) : 0
+      const count = calendarSources.calendarsBySource[sourceID]?.length ?? 0
       toasts.success(
         $_('calendar.add.successToast', { values: { count, name: nameInput.trim() } }),
       )
-      open = false
-      onClose?.()
+      // Stay open; transition to Stage 2 so the user can pick per-calendar
+      // colors. They can dismiss at any point — HSL fallback covers calendars
+      // they didn't customize.
+      newSourceID = sourceID
+      stage = 'colors'
     } catch (err) {
       lastError = (err as Error)?.message ?? String(err)
       console.error('Add CalDAV source failed:', err)
@@ -101,7 +118,7 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key !== 'Enter' || submitting) return
+    if (e.key !== 'Enter' || submitting || stage !== 'form') return
     e.preventDefault()
     submit()
   }
@@ -109,84 +126,118 @@
 
 <Dialog.Root bind:open onOpenChange={(v) => { if (!v) close() }}>
   <Dialog.Content class="max-w-md">
-    <Dialog.Header>
-      <Dialog.Title>{$_('calendar.add.title')}</Dialog.Title>
-      <Dialog.Description>
-        {$_('calendar.add.description')}
-      </Dialog.Description>
-    </Dialog.Header>
+    {#if stage === 'form'}
+      <Dialog.Header>
+        <Dialog.Title>{$_('calendar.add.title')}</Dialog.Title>
+        <Dialog.Description>
+          {$_('calendar.add.description')}
+        </Dialog.Description>
+      </Dialog.Header>
 
-    <div class="space-y-3 mt-2">
-      <div>
-        <Label for="cal-add-name">{$_('calendar.add.nameLabel')}</Label>
-        <Input
-          id="cal-add-name"
-          type="text"
-          placeholder={$_('calendar.add.namePlaceholder')}
-          bind:value={nameInput}
-          disabled={submitting}
-          onkeydown={onKeydown}
-        />
-      </div>
-      <div>
-        <Label for="cal-add-url">{$_('calendar.add.urlLabel')}</Label>
-        <Input
-          id="cal-add-url"
-          type="text"
-          placeholder={$_('calendar.add.urlPlaceholder')}
-          bind:value={urlInput}
-          disabled={submitting}
-          onkeydown={onKeydown}
-        />
-        <p class="text-xs text-muted-foreground mt-1">
-          {$_('calendar.add.urlHelp')}
-        </p>
-      </div>
-      <div>
-        <Label for="cal-add-username">{$_('calendar.add.usernameLabel')}</Label>
-        <Input
-          id="cal-add-username"
-          type="text"
-          bind:value={usernameInput}
-          disabled={submitting}
-          onkeydown={onKeydown}
-        />
-      </div>
-      <div>
-        <Label for="cal-add-password">{$_('calendar.add.passwordLabel')}</Label>
-        <Input
-          id="cal-add-password"
-          type="password"
-          bind:value={passwordInput}
-          disabled={submitting}
-          onkeydown={onKeydown}
-        />
-      </div>
-
-      {#if lastError !== ''}
-        <div class="flex items-start gap-2 p-2 bg-destructive/10 rounded text-sm min-w-0">
-          <Icon icon="mdi:alert-circle" class="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-          <div class="flex-1 min-w-0">
-            <div class="text-destructive font-medium">{$_('calendar.add.errorTitle')}</div>
-            <div class="text-xs text-muted-foreground break-all max-h-24 overflow-y-auto">{lastError}</div>
-            <div class="text-xs text-muted-foreground mt-1">{$_('calendar.add.errorHelp')}</div>
-          </div>
+      <div class="space-y-3 mt-2">
+        <div>
+          <Label for="cal-add-name">{$_('calendar.add.nameLabel')}</Label>
+          <Input
+            id="cal-add-name"
+            type="text"
+            placeholder={$_('calendar.add.namePlaceholder')}
+            bind:value={nameInput}
+            disabled={submitting}
+            onkeydown={onKeydown}
+          />
         </div>
-      {/if}
-    </div>
+        <div>
+          <Label for="cal-add-url">{$_('calendar.add.urlLabel')}</Label>
+          <Input
+            id="cal-add-url"
+            type="text"
+            placeholder={$_('calendar.add.urlPlaceholder')}
+            bind:value={urlInput}
+            disabled={submitting}
+            onkeydown={onKeydown}
+          />
+          <p class="text-xs text-muted-foreground mt-1">
+            {$_('calendar.add.urlHelp')}
+          </p>
+        </div>
+        <div>
+          <Label for="cal-add-username">{$_('calendar.add.usernameLabel')}</Label>
+          <Input
+            id="cal-add-username"
+            type="text"
+            bind:value={usernameInput}
+            disabled={submitting}
+            onkeydown={onKeydown}
+          />
+        </div>
+        <div>
+          <Label for="cal-add-password">{$_('calendar.add.passwordLabel')}</Label>
+          <Input
+            id="cal-add-password"
+            type="password"
+            bind:value={passwordInput}
+            disabled={submitting}
+            onkeydown={onKeydown}
+          />
+        </div>
 
-    <div class="flex items-center justify-end gap-2 pt-4 border-t border-border mt-4">
-      <Button variant="ghost" onclick={close} disabled={submitting}>
-        {$_('calendar.common.cancel')}
-      </Button>
-      <Button onclick={submit} disabled={submitting}>
-        {#if submitting}
-          <Icon icon="mdi:loading" class="w-4 h-4 mr-1 animate-spin" />
-          {$_('calendar.add.submitting')}
-        {:else}
-          {$_('calendar.add.submit')}
+        {#if lastError !== ''}
+          <div class="flex items-start gap-2 p-2 bg-destructive/10 rounded text-sm min-w-0">
+            <Icon icon="mdi:alert-circle" class="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+            <div class="flex-1 min-w-0">
+              <div class="text-destructive font-medium">{$_('calendar.add.errorTitle')}</div>
+              <div class="text-xs text-muted-foreground break-all max-h-24 overflow-y-auto">{lastError}</div>
+              <div class="text-xs text-muted-foreground mt-1">{$_('calendar.add.errorHelp')}</div>
+            </div>
+          </div>
         {/if}
-      </Button>
-    </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-4 border-t border-border mt-4">
+        <Button variant="ghost" onclick={close} disabled={submitting}>
+          {$_('calendar.common.cancel')}
+        </Button>
+        <Button onclick={submit} disabled={submitting}>
+          {#if submitting}
+            <Icon icon="mdi:loading" class="w-4 h-4 mr-1 animate-spin" />
+            {$_('calendar.add.submitting')}
+          {:else}
+            {$_('calendar.add.submit')}
+          {/if}
+        </Button>
+      </div>
+    {:else}
+      <Dialog.Header>
+        <Dialog.Title>{$_('calendar.add.colorPickStage.title')}</Dialog.Title>
+        <Dialog.Description>
+          {$_('calendar.add.colorPickStage.help')}
+        </Dialog.Description>
+      </Dialog.Header>
+
+      <div class="mt-2 max-h-80 overflow-y-auto">
+        {#each discoveredCalendars as cal (cal.id)}
+          <div class="flex items-center gap-3 py-2">
+            <span
+              class="shrink-0 inline-block w-3 h-3 rounded-full"
+              style:background-color={calendarSources.colorOf(cal.id)}
+              aria-hidden="true"
+            ></span>
+            <span class="flex-1 min-w-0 truncate text-sm text-foreground">
+              {cal.displayName}
+            </span>
+            <ColorPicker
+              value={cal.color ?? ''}
+              onchange={(hex) => { void calendarSources.setColor(cal.id, hex) }}
+            />
+          </div>
+        {/each}
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-4 border-t border-border mt-4">
+        <Button onclick={close}>
+          {$_('calendar.add.colorPickStage.done')}
+        </Button>
+      </div>
+    {/if}
   </Dialog.Content>
 </Dialog.Root>

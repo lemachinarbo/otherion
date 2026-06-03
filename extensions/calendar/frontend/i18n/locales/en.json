@@ -57,7 +57,12 @@
       "successToast": "Added {count} calendar(s) from {name}",
       "errorTitle": "Couldn't connect",
       "errorHelp": "Check the URL, username, and password. The error from the server is shown below.",
-      "fieldRequired": "{field} is required"
+      "fieldRequired": "{field} is required",
+      "colorPickStage": {
+        "title": "Pick colors for your calendars",
+        "help": "You can change these later in calendar settings.",
+        "done": "Done"
+      }
     },
     "toast": {
       "syncStarted": "Syncing {name}…",
