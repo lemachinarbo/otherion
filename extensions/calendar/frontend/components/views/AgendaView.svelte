@@ -22,6 +22,7 @@
   import { events } from '$extensions/calendar/frontend/stores/events.svelte'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
   import { calendarView } from '$extensions/calendar/frontend/stores/calendarView.svelte'
+  import { calendarSettings } from '$extensions/calendar/frontend/stores/calendarSettings.svelte'
   // @ts-ignore - wailsjs bindings
   import type { backend } from '$wailsjs/go/models'
 
@@ -34,27 +35,28 @@
 
   let selectedRowId = $state<string | null>(null)
 
-  // Locale-aware formatters. Re-derive when locale changes.
+  // Locale-aware AND tz-aware formatters: locale via $locale, timezone
+  // via the user's chosen display timezone.
   const dateFmt = $derived(new Intl.DateTimeFormat($locale || undefined, {
     weekday: 'long', month: 'short', day: 'numeric',
+    timeZone: calendarSettings.effectiveTimezone,
   }))
   const timeFmt = $derived(new Intl.DateTimeFormat($locale || undefined, {
     hour: '2-digit', minute: '2-digit',
+    timeZone: calendarSettings.effectiveTimezone,
   }))
   const rangeFmt = $derived(new Intl.DateTimeFormat($locale || undefined, {
     month: 'short', day: 'numeric',
+    timeZone: calendarSettings.effectiveTimezone,
   }))
 
-  function startOfDay(d: Date): Date {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  }
-
-  // Flatten events into rows. Sort by day, then all-day-first within day,
-  // then by start time. Mark `isFirstInDay` on the first row of each day.
+  // Flatten events into rows. Sort by day (using tz-aware startOfDay so
+  // grouping reflects the user's chosen tz), then all-day-first within
+  // day, then by start time. Mark `isFirstInDay` on the first of each day.
   const rows = $derived.by<EventRow[]>(() => {
     const out: { id: string; instance: backend.EventInstance; date: Date }[] = []
     for (const inst of events.instances) {
-      const date = startOfDay(new Date(inst.instanceStartUnix * 1000))
+      const date = calendarView.startOfDay(new Date(inst.instanceStartUnix * 1000))
       out.push({ id: inst.id, instance: inst, date })
     }
     out.sort((a, b) => {

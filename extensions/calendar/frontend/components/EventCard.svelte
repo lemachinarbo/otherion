@@ -4,6 +4,7 @@
   // color, and optional multi-day continuation flags. Click bubbles to the
   // parent via the onclick prop — no internal state.
 
+  import { calendarSettings } from '$extensions/calendar/frontend/stores/calendarSettings.svelte'
   // @ts-ignore - wailsjs bindings
   import type { backend } from '$wailsjs/go/models'
 
@@ -27,11 +28,15 @@
 
   const isAllDay = $derived(instance.isAllDay)
 
-  // Time prefix for timed events. Locale-aware formatting via Intl.
+  // Time prefix for timed events. Locale-aware via Intl; tz-aware via the
+  // user's chosen display timezone.
   const timeLabel = $derived.by(() => {
     if (isAllDay) return ''
     const d = new Date(instance.instanceStartUnix * 1000)
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+    return new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit', minute: '2-digit', hour12: false,
+      timeZone: calendarSettings.effectiveTimezone,
+    }).format(d)
   })
 
   function handleClick(e: MouseEvent) {

@@ -6,6 +6,8 @@
 
   import { _, locale } from 'svelte-i18n'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
+  import { calendarSettings } from '$extensions/calendar/frontend/stores/calendarSettings.svelte'
+  import { toTzDate } from '$extensions/calendar/frontend/lib/tzMath'
   // @ts-ignore - wailsjs bindings
   import { Calendar_GetEvent } from '$wailsjs/go/app/App.js'
   // @ts-ignore - wailsjs bindings
@@ -64,13 +66,15 @@
 
   const color = $derived(event ? calendarSources.colorOf(event.calendarId) : '#999999')
 
-  // Locale-aware date / time / datetime formatters. Use the current
-  // svelte-i18n locale so display matches the user's chosen UI language.
+  // Locale-aware AND tz-aware formatters: locale via svelte-i18n's $locale,
+  // timezone via the user's chosen display timezone.
   const dateFmt = $derived(new Intl.DateTimeFormat($locale || undefined, {
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+    timeZone: calendarSettings.effectiveTimezone,
   }))
   const timeFmt = $derived(new Intl.DateTimeFormat($locale || undefined, {
     hour: '2-digit', minute: '2-digit',
+    timeZone: calendarSettings.effectiveTimezone,
   }))
 
   const whenLabel = $derived.by(() => {
@@ -80,7 +84,8 @@
     if (event.isAllDay) {
       return `${dateFmt.format(start)} (${$_('calendar.detail.allDay')})`
     }
-    const sameDay = start.toDateString() === end.toDateString()
+    // Sameness check is tz-aware: same local-day in the user's chosen tz.
+    const sameDay = toTzDate(start).toDateString() === toTzDate(end).toDateString()
     if (sameDay) {
       return `${dateFmt.format(start)} · ${timeFmt.format(start)} – ${timeFmt.format(end)}`
     }

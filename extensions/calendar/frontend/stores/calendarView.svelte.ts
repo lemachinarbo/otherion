@@ -4,6 +4,12 @@
 //
 // Not persisted across app sessions in 1D. 1G can wire to
 // core.Storage().KV('calendar') if cross-session memory matters.
+//
+// Date math is tz-aware via toTzDate/fromTzDate (date-fns-tz) — every
+// helper reads the user's chosen display timezone from calendarSettings
+// at call time, so changes propagate to all dependent $derived values.
+
+import { toTzDate, fromTzDate } from '$extensions/calendar/frontend/lib/tzMath'
 
 export type ViewKind = 'month' | 'week' | 'day' | 'agenda'
 
@@ -109,37 +115,49 @@ function toggleEventFocus() {
   }
 }
 
-// --- date helpers (local-tz) -------------------------------------------------
+// --- date helpers (tz-aware via tzMath) -------------------------------------
+//
+// Each helper wraps its input through toTzDate so native .getFullYear/getMonth/
+// getDate/getHours etc. read the wall-clock value in the user's chosen
+// display timezone, performs the mutation, then converts back via fromTzDate
+// so the returned Date is a real UTC instant. Callers continue to receive
+// real UTC Dates suitable for `.getTime() / 1000` boundary math.
 
 function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const z = toTzDate(d)
+  z.setHours(0, 0, 0, 0)
+  return fromTzDate(z)
 }
 
 function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1)
+  const z = toTzDate(d)
+  z.setDate(1)
+  z.setHours(0, 0, 0, 0)
+  return fromTzDate(z)
 }
 
 function addDays(d: Date, n: number): Date {
-  const out = new Date(d)
-  out.setDate(out.getDate() + n)
-  return out
+  const z = toTzDate(d)
+  z.setDate(z.getDate() + n)
+  return fromTzDate(z)
 }
 
 function addMonths(d: Date, n: number): Date {
-  const out = new Date(d)
-  out.setMonth(out.getMonth() + n)
-  return out
+  const z = toTzDate(d)
+  z.setMonth(z.getMonth() + n)
+  return fromTzDate(z)
 }
 
 function weekStart(d: Date): Date {
   // Sunday as week start. Matches the Month view grid.
-  const out = startOfDay(d)
-  out.setDate(out.getDate() - out.getDay())
-  return out
+  const z = toTzDate(d)
+  z.setDate(z.getDate() - z.getDay())
+  z.setHours(0, 0, 0, 0)
+  return fromTzDate(z)
 }
 
 function monthGridStart(d: Date): Date {
-  // First Sunday on/before the 1st of d's month.
+  // First Sunday on/before the 1st of d's month (in tz).
   return weekStart(startOfMonth(d))
 }
 
@@ -162,8 +180,10 @@ export const calendarView = {
   selectEvent,
   toggleEventFocus,
 
-  // Re-export helpers — MonthView uses them to compute per-cell dates.
+  // Re-export helpers — MonthView uses them to compute per-cell dates;
+  // WeekView uses weekStart for its 7-day window.
   monthGridStart,
+  weekStart,
   startOfDay,
   startOfMonth,
   addDays,

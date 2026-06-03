@@ -6,11 +6,11 @@
   import TimelineView from './TimelineView.svelte'
   import { calendarView } from '$extensions/calendar/frontend/stores/calendarView.svelte'
 
-  // weekStart isn't directly exported; addDays + monthGridStart are.
-  // Reconstruct: start = anchor - anchor.getDay() (Sunday).
+  // Derive the 7-day window from the tz-aware weekStart helper. The helper
+  // returns a real UTC Date of Sunday-midnight in the user's chosen tz, so
+  // addDays(+i) walks the visible week correctly across DST.
   const dates = $derived.by(() => {
-    const a = calendarView.anchorDate
-    const start = new Date(a.getFullYear(), a.getMonth(), a.getDate() - a.getDay())
+    const start = calendarView.weekStart(calendarView.anchorDate)
     return [0, 1, 2, 3, 4, 5, 6].map(i => calendarView.addDays(start, i))
   })
 </script>

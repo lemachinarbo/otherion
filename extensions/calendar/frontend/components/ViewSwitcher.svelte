@@ -8,8 +8,10 @@
   import { _ } from 'svelte-i18n'
   import Icon from '@iconify/svelte'
   import { Button } from '$lib/components/ui/button'
+  import TimezonePicker from './TimezonePicker.svelte'
   import { calendarView, type ViewKind } from '$extensions/calendar/frontend/stores/calendarView.svelte'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
+  import { calendarSettings } from '$extensions/calendar/frontend/stores/calendarSettings.svelte'
 
   interface ViewOption {
     kind: ViewKind
@@ -23,17 +25,15 @@
     { kind: 'agenda', label: $_('calendar.viewSwitcher.agenda') },
   ])
 
-  // Browser's resolved IANA timezone, for the tz indicator.
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-
-  // Human-readable title for the current anchor + view. Phase 1D only
-  // renders month — other views use simpler labels.
+  // Human-readable title for the current anchor + view, formatted in the
+  // user's chosen display timezone (calendarSettings.effectiveTimezone).
   const title = $derived.by(() => {
+    const tz = calendarSettings.effectiveTimezone
     const d = calendarView.anchorDate
-    if (calendarView.viewKind === 'month') {
-      return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-    }
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    const opts: Intl.DateTimeFormatOptions = calendarView.viewKind === 'month'
+      ? { month: 'long', year: 'numeric', timeZone: tz }
+      : { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz }
+    return new Intl.DateTimeFormat(undefined, opts).format(d)
   })
 
   let syncing = $state(false)
@@ -97,11 +97,11 @@
     <h2 class="text-sm font-semibold text-foreground ml-2 truncate">{title}</h2>
   </div>
 
-  <!-- Right: tz indicator + sync. -->
+  <!-- Right: tz picker + sync. -->
   <div class="flex items-center gap-2 shrink-0">
-    <span class="text-xs text-muted-foreground hidden sm:inline">
-      {$_('calendar.viewSwitcher.tzLabel', { values: { tz } })}
-    </span>
+    <div class="hidden sm:inline">
+      <TimezonePicker />
+    </div>
     <Button
       size="sm"
       variant="outline"

@@ -21,14 +21,15 @@
   import { calendarView } from '$extensions/calendar/frontend/stores/calendarView.svelte'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
   import { events } from '$extensions/calendar/frontend/stores/events.svelte'
+  import { toTzDate } from '$extensions/calendar/frontend/lib/tzMath'
   // @ts-ignore - wailsjs bindings
   import type { backend } from '$wailsjs/go/models'
 
   const MAX_EVENTS_PER_CELL = 3
 
-  // 6 rows × 7 cols = 42 cells starting from the grid-start.
+  // 6 rows × 7 cols = 42 cells starting from the grid-start (in tz).
   const gridStart = $derived(calendarView.monthGridStart(calendarView.anchorDate))
-  const anchorMonth = $derived(calendarView.anchorDate.getMonth())
+  const anchorMonth = $derived(toTzDate(calendarView.anchorDate).getMonth())
   const today = $derived(calendarView.startOfDay(new Date()).getTime())
 
   const cells = $derived.by(() => {
@@ -37,7 +38,7 @@
       const date = calendarView.addDays(gridStart, i)
       out.push({
         date,
-        isOtherMonth: date.getMonth() !== anchorMonth,
+        isOtherMonth: toTzDate(date).getMonth() !== anchorMonth,
         isToday: date.getTime() === today,
       })
     }
@@ -123,7 +124,7 @@
                      {cell.isToday ? 'bg-primary text-primary-foreground font-semibold' : ''}
                      {cell.isOtherMonth && !cell.isToday ? 'text-muted-foreground/50' : 'text-foreground'}"
             >
-              {cell.date.getDate()}
+              {toTzDate(cell.date).getDate()}
             </span>
           </div>
           <div class="flex-1 flex flex-col gap-0.5 min-h-0 overflow-hidden">

@@ -19,6 +19,8 @@
   import { events } from '$extensions/calendar/frontend/stores/events.svelte'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
   import { calendarView } from '$extensions/calendar/frontend/stores/calendarView.svelte'
+  import { calendarSettings } from '$extensions/calendar/frontend/stores/calendarSettings.svelte'
+  import { toTzDate } from '$extensions/calendar/frontend/lib/tzMath'
   // @ts-ignore - wailsjs bindings
   import type { backend } from '$wailsjs/go/models'
 
@@ -32,13 +34,16 @@
   const HOUR_PX = 48
   const DAY_PX = HOUR_PX * 24
 
+  // Hour labels: pure 00..23 in the user's chosen tz. Use a UTC reference
+  // date and format in UTC so the strings stay DST-safe — we only want the
+  // hour-of-day labels for the column gutter, not real timed values.
   const hourLabels = $derived.by(() => {
-    const fmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', hour12: false })
+    const fmt = new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit', hour12: false, timeZone: 'UTC',
+    })
     const out: string[] = []
-    const d = new Date()
     for (let h = 0; h < 24; h++) {
-      d.setHours(h, 0, 0, 0)
-      out.push(fmt.format(d))
+      out.push(fmt.format(new Date(Date.UTC(2020, 0, 1, h, 0, 0))))
     }
     return out
   })
@@ -53,16 +58,13 @@
     $_('calendar.month.weekdayShort.sat'),
   ])
 
-  const todayMs = $derived.by(() => {
-    const t = new Date()
-    t.setHours(0, 0, 0, 0)
-    return t.getTime()
-  })
-
   function isSameDay(a: Date, b: Date): boolean {
-    return a.getFullYear() === b.getFullYear()
-      && a.getMonth() === b.getMonth()
-      && a.getDate() === b.getDate()
+    // Tz-aware: same calendar-day in the user's chosen display tz.
+    const za = toTzDate(a)
+    const zb = toTzDate(b)
+    return za.getFullYear() === zb.getFullYear()
+      && za.getMonth() === zb.getMonth()
+      && za.getDate() === zb.getDate()
   }
 
   // --- Categorise events into all-day-band vs hour-grid -----------------------
@@ -273,7 +275,10 @@
     if (nowTimer !== null) clearInterval(nowTimer)
   })
 
-  const nowMinutes = $derived(nowDate.getHours() * 60 + nowDate.getMinutes())
+  const nowMinutes = $derived.by(() => {
+    const z = toTzDate(nowDate)
+    return z.getHours() * 60 + z.getMinutes()
+  })
   const nowTopPct = $derived((nowMinutes / 1440) * 100)
   const todayColIdx = $derived.by(() => {
     for (let i = 0; i < dates.length; i++) {
@@ -288,10 +293,10 @@
 
   onMount(() => {
     if (!scrollRef) return
-    const now = new Date()
+    const zNow = toTzDate(new Date())
     let targetPx = HOUR_PX * 8 // default 8 AM
-    if (todayColIdx >= 0 && now.getHours() >= 6) {
-      const m = now.getHours() * 60 + now.getMinutes()
+    if (todayColIdx >= 0 && zNow.getHours() >= 6) {
+      const m = zNow.getHours() * 60 + zNow.getMinutes()
       targetPx = Math.max(0, (m * HOUR_PX / 60) - HOUR_PX)
     }
     scrollRef.scrollTop = targetPx
@@ -313,13 +318,14 @@
     <div></div>
     {#each dates as date, i (i)}
       {@const isToday = isSameDay(date, new Date())}
+      {@const zd = toTzDate(date)}
       <div class="px-2 py-1 text-center border-l border-border">
         <div class="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-          {weekdayShort[date.getDay()]}
+          {weekdayShort[zd.getDay()]}
         </div>
         <div class="inline-flex items-center justify-center w-6 h-6 mt-0.5 text-sm
                     {isToday ? 'rounded-full bg-primary text-primary-foreground' : 'text-foreground'}">
-          {date.getDate()}
+          {zd.getDate()}
         </div>
       </div>
     {/each}
@@ -404,7 +410,10 @@
               onclick={() => onEventClick(block.instance)}
             >
               <div class="font-mono text-[10px] text-muted-foreground leading-tight">
-                {new Date(block.instance.instanceStartUnix * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}
+                {new Intl.DateTimeFormat(undefined, {
+                  hour: '2-digit', minute: '2-digit', hour12: false,
+                  timeZone: calendarSettings.effectiveTimezone,
+                }).format(new Date(block.instance.instanceStartUnix * 1000))}
               </div>
               <div class="truncate leading-tight">
                 {block.instance.summary || '(no title)'}

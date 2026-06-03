@@ -29,6 +29,7 @@ export default defineConfig({
       // because extension files live outside the frontend/ root.
       '@iconify/svelte': path.resolve(NODE_MODULES_DIR, '@iconify/svelte'),
       'svelte-i18n': path.resolve(NODE_MODULES_DIR, 'svelte-i18n'),
+      'date-fns-tz': path.resolve(NODE_MODULES_DIR, 'date-fns-tz'),
     },
   },
   optimizeDeps: {

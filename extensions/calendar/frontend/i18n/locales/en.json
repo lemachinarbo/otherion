@@ -104,6 +104,12 @@
     "timeline": {
       "allDay": "all day",
       "nowLabel": "Now"
+    },
+    "tzSelector": {
+      "searchPlaceholder": "Search timezones…",
+      "autoDetect": "Auto-detect (use system)",
+      "noResults": "No matching timezones",
+      "tooltip": "Click to change display timezone"
     }
   }
 }
