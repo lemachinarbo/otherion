@@ -1,18 +1,18 @@
 <script lang="ts">
   // CalendarSidebar — left sidebar listing sources + their calendars.
   // Issue #118 pattern: one section per source, per-calendar rows with
-  // checkbox + color swatch + truncated name. Bottom strip (anchored to the
-  // bottom via flex-1 spacer): + Add CalDAV button, last-sync indicator,
-  // settings cog.
+  // checkbox + color swatch + truncated name. Bottom strip (anchored via
+  // SidebarFrame's footer slot): last-sync indicator + settings cog.
   //
-  // NOT built on kit SourceSidebar because (a) calendar's semantics are
-  // multi-toggle visibility, not single-source-select, so SourceSidebar's
-  // keyboard nav doesn't fit, and (b) the bottom-anchored action strip
-  // needs a flex parent we control (SourceSidebar bakes its own chrome).
-  // Visual shape matches the contacts sidebar (w-60, border-r, bg-muted/30).
+  // NOT built on kit SourceSidebar because calendar's semantics are
+  // multi-toggle visibility, not single-source-select. Built on the
+  // lower-level kit `SidebarFrame` which owns container chrome + responsive
+  // overlay + title + body/footer slots; visual parity with contacts'
+  // sidebar (and any future extension sidebar) is automatic.
 
   import { _ } from 'svelte-i18n'
   import Icon from '@iconify/svelte'
+  import SidebarFrame from '$lib/components/kit/SidebarFrame.svelte'
   import SidebarAddItem from '$lib/components/kit/SidebarAddItem.svelte'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
   // @ts-ignore - wailsjs bindings
@@ -56,79 +56,77 @@
   }
 </script>
 
-<aside class="w-60 flex-shrink-0 flex flex-col pt-3 border-r border-border bg-muted/30">
-  <h2 class="px-4 mb-3 text-lg font-semibold text-foreground">
-    {$_('calendar.sidebar.title')}
-  </h2>
+<SidebarFrame title={$_('calendar.sidebar.title')}>
+  {#snippet body()}
+    <div class="py-2">
+      {#if sections.length === 0}
+        <p class="px-4 py-3 text-xs text-muted-foreground">
+          {$_('calendar.sidebar.noCalendars')}
+        </p>
+      {/if}
 
-  <!-- Scrollable section list — takes the remaining vertical space so the
-       bottom strip stays anchored at the bottom of the sidebar. -->
-  <div class="flex-1 min-h-0 overflow-y-auto py-2">
-    {#if sections.length === 0}
-      <p class="px-4 py-3 text-xs text-muted-foreground">
-        {$_('calendar.sidebar.noCalendars')}
-      </p>
-    {/if}
-
-    {#each sections as section (section.source.id)}
-      <div class="mb-3">
-        <div class="px-4 mb-1 text-[11px] uppercase tracking-wider text-muted-foreground truncate">
-          {section.source.name}
-        </div>
-        {#each section.calendars as cal (cal.id)}
-          <div
-            class="group flex items-center gap-2 mx-2 px-2 py-1.5 rounded-md cursor-pointer text-sm
-                   hover:bg-muted/40 transition-colors"
-            role="button"
-            tabindex="0"
-            onclick={() => toggleVisibility(cal)}
-            onkeydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                toggleVisibility(cal)
-              }
-            }}
-          >
-            <input
-              type="checkbox"
-              class="shrink-0 cursor-pointer accent-primary"
-              checked={cal.visible}
-              onclick={(e) => { e.stopPropagation(); toggleVisibility(cal) }}
-              aria-label={cal.displayName}
-            />
-            <span
-              class="shrink-0 inline-block w-2.5 h-2.5 rounded-full"
-              style:background-color={calendarSources.colorOf(cal.id)}
-              aria-hidden="true"
-            ></span>
-            <span class="flex-1 min-w-0 truncate text-foreground">{cal.displayName}</span>
+      {#each sections as section (section.source.id)}
+        <div class="mb-3">
+          <div class="px-4 mb-1 text-[11px] uppercase tracking-wider text-muted-foreground truncate">
+            {section.source.name}
           </div>
-        {/each}
-      </div>
-    {/each}
+          {#each section.calendars as cal (cal.id)}
+            <div
+              class="group flex items-center gap-2 mx-2 px-2 py-1.5 rounded-md cursor-pointer text-sm
+                     hover:bg-muted/40 transition-colors"
+              role="button"
+              tabindex="0"
+              onclick={() => toggleVisibility(cal)}
+              onkeydown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  toggleVisibility(cal)
+                }
+              }}
+            >
+              <input
+                type="checkbox"
+                class="shrink-0 cursor-pointer accent-primary"
+                checked={cal.visible}
+                onclick={(e) => { e.stopPropagation(); toggleVisibility(cal) }}
+                aria-label={cal.displayName}
+              />
+              <span
+                class="shrink-0 inline-block w-2.5 h-2.5 rounded-full"
+                style:background-color={calendarSources.colorOf(cal.id)}
+                aria-hidden="true"
+              ></span>
+              <span class="flex-1 min-w-0 truncate text-foreground">{cal.displayName}</span>
+            </div>
+          {/each}
+        </div>
+      {/each}
 
-    <!-- Add-source entry at the bottom of the scrollable list, matching mail. -->
-    <SidebarAddItem
-      label={$_('calendar.sidebar.addSource')}
-      onclick={() => onAddSource?.()}
-    />
-  </div>
+      <!-- Add-source entry at the bottom of the scrollable list, matching mail. -->
+      <SidebarAddItem
+        label={$_('calendar.sidebar.addSource')}
+        onclick={() => onAddSource?.()}
+      />
+    </div>
+  {/snippet}
 
-  <!-- Bottom strip: sync status + settings cog only (the add button now
-       lives inside the scrollable list above, matching mail's pattern). -->
-  <div class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-background/40 shrink-0 text-xs text-muted-foreground">
-    <span class="flex items-center gap-1 min-w-0 truncate">
-      <Icon icon="mdi:sync" class="w-3 h-3 shrink-0" />
-      <span class="truncate">{lastSyncedLabel}</span>
-    </span>
-    <button
-      class="p-1 rounded hover:bg-muted/40 shrink-0"
-      title={$_('calendar.sidebar.settings')}
-      onclick={() => onOpenSettings?.()}
-      type="button"
-      aria-label={$_('calendar.sidebar.settings')}
-    >
-      <Icon icon="mdi:cog-outline" class="w-3.5 h-3.5" />
-    </button>
-  </div>
-</aside>
+  {#snippet footer()}
+    <!-- Sync status + settings cog. SidebarFrame's footer slot pins this
+         at the bottom; we own the strip's own chrome (border-t, padding). -->
+    <div class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-background/40 text-xs text-muted-foreground">
+      <span class="flex items-center gap-1 min-w-0 truncate">
+        <Icon icon="mdi:sync" class="w-3 h-3 shrink-0" />
+        <span class="truncate">{lastSyncedLabel}</span>
+      </span>
+      <button
+        class="p-1 rounded hover:bg-muted/40 shrink-0"
+        title={$_('calendar.sidebar.settings')}
+        onclick={() => onOpenSettings?.()}
+        type="button"
+        aria-label={$_('calendar.sidebar.settings')}
+      >
+        <Icon icon="mdi:cog-outline" class="w-3.5 h-3.5" />
+      </button>
+    </div>
+  {/snippet}
+</SidebarFrame>

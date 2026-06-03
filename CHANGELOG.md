@@ -1,9 +1,13 @@
 # CHANGELOG
 
 
-**v0.3.0 - 06-03-2026**
+**v0.3.0 - 06-16-2026**
 ---
 
+- Prepared CardDav infra for extensibility
+- Added Extension infrastructure
+- Added Contacts extension - shipped disabled
+- Added Calendar extension - shipped disabled
 - Added fallback for Mailfence and other non-quote-compliant providers - [#209](https://github.com/hkdb/aerion/issues/209)
 - Fixed CardDav remove provider code path to not leave orphaned contacts in db
 

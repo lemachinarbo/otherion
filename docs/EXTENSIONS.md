@@ -1335,7 +1335,7 @@ Extensions need to look and behave like the rest of Aerion — same keys, same f
 
 ### The 1-for-1 rule
 
-Every kit primitive (`Avatar`, `PaneLayout`, `ListPane`, `ListRow`, `ListHeader`, `ResponsiveSidebarToggle`, `SourceSidebar`, `SourceItem`, `SidebarAddItem`, `DetailPane`, `ConfirmDialog`, `ColorPicker`, `OAuthCredsSlotEditor`, …) is a behavioral replica of how the equivalent functionality works in mail today: same key bindings, same focus semantics, same scroll-into-view, same edge-case behavior. The backwards-compat test: **if mail were ever refactored to consume the kit, the user should see zero difference**. If you can't pass that test on a kit primitive you're writing, you've diverged.
+Every kit primitive (`Avatar`, `PaneLayout`, `ListPane`, `ListRow`, `ListHeader`, `ResponsiveSidebarToggle`, `SidebarFrame`, `SourceSidebar`, `SourceItem`, `SidebarAddItem`, `DetailPane`, `ConfirmDialog`, `ColorPicker`, `OAuthCredsSlotEditor`, …) is a behavioral replica of how the equivalent functionality works in mail today: same key bindings, same focus semantics, same scroll-into-view, same edge-case behavior. The backwards-compat test: **if mail were ever refactored to consume the kit, the user should see zero difference**. If you can't pass that test on a kit primitive you're writing, you've diverged.
 
 **Greenfield exception (R25).** Some kit primitives have no mail equivalent — Calendar's `DetailOverlay`, for example, since mail's viewer is a flex-chain pane, not a fixed overlay. Per [`EXT_RULES.md` R25](./EXT_RULES.md), kit is an extension-driven SDK; when mail has no counterpart, the primitive is designed cleanly from the consumer's needs. The 1-for-1 rule applies to primitives that DO have a mail counterpart (`SidebarAddItem` ↔ mail's "+ Add Account" inline button, `ConfirmDialog` ↔ mail's confirms, etc.). Greenfield primitives are still bound by the kit's general conventions: theme tokens, density-aware sizing, layout-store responsive handling, `shortcuts.ts` predicates for keys, and **no imports from mail's `components/{list,sidebar,viewer}/` namespace**.
 
@@ -1465,7 +1465,41 @@ The `onDelete` handler typically opens a `ConfirmDialog` (see below) rather than
 - j/k/Up/Down navigation across the flattened item list
 - Enter to re-select current
 - DOM-level focus; registers as `'sidebar'` slot by default (override via `focusSlot` prop)
-- **Self-managed responsive behavior**: reads `getLayoutMode`/`getResponsiveView`/`hideSidebar` from `$lib/stores/layout.svelte` and applies `responsive-sidebar-overlay`/`responsive-sidebar-visible` to its outer `<div>` in narrow mode. A back arrow injected at the top dismisses the overlay. Background flips from `bg-muted/30` (in-flow) to `bg-background` (overlay) so the narrow-mode scrim doesn't show through. No responsive props on the public API.
+- **Chrome via `SidebarFrame`**: container styling, narrow-mode responsive overlay (slide-in + back button), title rendering, and the body-scroll layout are all delegated to the kit's `SidebarFrame` primitive (see below). SourceSidebar wraps that chrome with its keyboard nav, focus-slot integration, and section/item rendering — but doesn't own the visual shell anymore. The benefit: when sidebar-wide settings (density, etc.) land on `SidebarFrame`, all SourceSidebar consumers inherit them automatically.
+
+#### `SidebarFrame` — sidebar chrome primitive
+
+[`frontend/src/lib/components/kit/SidebarFrame.svelte`](../frontend/src/lib/components/kit/SidebarFrame.svelte)
+
+Lower-level kit primitive owning *only* the visual chrome of an extension sidebar: container styling (width, border, background), narrow-mode responsive overlay (slide-in + auto-injected back button), optional title `<h2>`, body slot (scrolling), and optional footer slot (sticky bottom strip). Used directly by extensions whose row models don't fit `SourceSidebar` (e.g. Calendar's multi-toggle visibility), and used internally by `SourceSidebar` itself so both paths share one chrome implementation.
+
+```svelte
+<SidebarFrame title={$_('calendar.sidebar.title')}>
+  {#snippet body()}
+    <!-- consumer's row list -->
+  {/snippet}
+  {#snippet footer()}
+    <!-- optional sticky bottom strip (consumer owns padding + border) -->
+  {/snippet}
+</SidebarFrame>
+```
+
+| Prop | Type | Notes |
+|---|---|---|
+| `title` | `string?` | Rendered as `<h2 class="text-lg font-semibold mb-3 px-4">`. Omit for sidebars without a title. |
+| `label` | `string?` | ARIA label for the `<aside>`. Defaults to `title`. |
+| `body` | `Snippet` | Required. The scrollable middle. SidebarFrame wraps it in `flex-1 min-h-0 overflow-y-auto`. |
+| `footer` | `Snippet?` | Optional bottom strip. Pinned with `shrink-0`. Consumer owns the strip's chrome (border-t, padding, content). |
+| `containerRef` | `bindable HTMLElement \| null` | Bind to access the outer `<aside>`. SourceSidebar uses this for its tabindex-based keyboard focus. |
+| `focusable` | `boolean?` | When true, the `<aside>` gets `tabindex="0"`. SourceSidebar passes true; row-only consumers leave false. |
+| `class` | `string?` | Extra class string appended to the outer `<aside>`. SourceSidebar uses this for `pane-focus-flash`. |
+| `onkeydown` / `onfocus` / `onmousedown` | `(e) => void`? | DOM event handlers forwarded to the outer `<aside>`. |
+
+**Layout model**: title is non-scrolling (sticky at the top), body fills the remaining space with its own overflow-y-auto, optional footer pins at the bottom. This split is intrinsic to the primitive — it's what enables consumers like Calendar to pin a sync-indicator + settings cog strip below a scrolling list.
+
+**Why this primitive exists**: SidebarFrame is the kit's single hook for upcoming cross-extension sidebar settings — density (like the existing message-list density), font-size variants, etc. When those settings ship, the density-aware classes live inside `SidebarFrame`, and all consumers (calendar directly, contacts via `SourceSidebar`'s internal composition, future extensions) inherit them automatically. No per-extension wiring required.
+
+**Greenfield primitive (R25)** — no 1-for-1 mail counterpart at this abstraction level; mail's `Sidebar.svelte` has app-level `TitleBar` chrome and a different idiom. Sits in the §"The 1-for-1 rule" greenfield-exception lane.
 
 #### `SidebarAddItem` — "+ Add …" entry for sidebar lists
 
