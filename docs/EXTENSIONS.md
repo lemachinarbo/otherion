@@ -1215,7 +1215,9 @@ Extensions need to look and behave like the rest of Aerion — same keys, same f
 
 ### The 1-for-1 rule
 
-Every kit primitive (`Avatar`, `PaneLayout`, `ListPane`, `ListRow`, `ListHeader`, `ResponsiveSidebarToggle`, `SourceSidebar`, `SourceItem`, `DetailPane`, `ConfirmDialog`, `OAuthCredsSlotEditor`, …) is a behavioral replica of how the equivalent functionality works in mail today: same key bindings, same focus semantics, same scroll-into-view, same edge-case behavior. The backwards-compat test: **if mail were ever refactored to consume the kit, the user should see zero difference**. If you can't pass that test on a kit primitive you're writing, you've diverged.
+Every kit primitive (`Avatar`, `PaneLayout`, `ListPane`, `ListRow`, `ListHeader`, `ResponsiveSidebarToggle`, `SourceSidebar`, `SourceItem`, `SidebarAddItem`, `DetailPane`, `ConfirmDialog`, `OAuthCredsSlotEditor`, …) is a behavioral replica of how the equivalent functionality works in mail today: same key bindings, same focus semantics, same scroll-into-view, same edge-case behavior. The backwards-compat test: **if mail were ever refactored to consume the kit, the user should see zero difference**. If you can't pass that test on a kit primitive you're writing, you've diverged.
+
+**Greenfield exception (R25).** Some kit primitives have no mail equivalent — Calendar's `DetailOverlay`, for example, since mail's viewer is a flex-chain pane, not a fixed overlay. Per [`EXT_RULES.md` R25](./EXT_RULES.md), kit is an extension-driven SDK; when mail has no counterpart, the primitive is designed cleanly from the consumer's needs. The 1-for-1 rule applies to primitives that DO have a mail counterpart (`SidebarAddItem` ↔ mail's "+ Add Account" inline button, `ConfirmDialog` ↔ mail's confirms, etc.). Greenfield primitives are still bound by the kit's general conventions: theme tokens, density-aware sizing, layout-store responsive handling, `shortcuts.ts` predicates for keys, and **no imports from mail's `components/{list,sidebar,viewer}/` namespace**.
 
 **Practical consequence: read the mail equivalent before implementing a kit primitive.** Don't infer behavior. Don't reach for a generic third-party pattern. Open `MessageList.svelte` / `Sidebar.svelte` / `ConversationViewer.svelte` / the relevant `ui/` host primitive and study how it handles keyboard, focus, scroll, and edge cases. Then match that behavior in the kit.
 
@@ -1345,6 +1347,29 @@ The `onDelete` handler typically opens a `ConfirmDialog` (see below) rather than
 - DOM-level focus; registers as `'sidebar'` slot by default (override via `focusSlot` prop)
 - **Self-managed responsive behavior**: reads `getLayoutMode`/`getResponsiveView`/`hideSidebar` from `$lib/stores/layout.svelte` and applies `responsive-sidebar-overlay`/`responsive-sidebar-visible` to its outer `<div>` in narrow mode. A back arrow injected at the top dismisses the overlay. Background flips from `bg-muted/30` (in-flow) to `bg-background` (overlay) so the narrow-mode scrim doesn't show through. No responsive props on the public API.
 
+#### `SidebarAddItem` — "+ Add …" entry for sidebar lists
+
+[`frontend/src/lib/components/kit/SidebarAddItem.svelte`](../frontend/src/lib/components/kit/SidebarAddItem.svelte)
+
+```svelte
+<SidebarAddItem
+  label={$_('calendar.sidebar.addSource')}
+  onclick={() => { showAddSource = true }}
+/>
+```
+
+| Prop | Type | Notes |
+|---|---|---|
+| `label` | `string` | Required. Button text — i18n it at the call site. |
+| `icon` | `string?` | Defaults to `'mdi:plus'`. Any `@iconify/svelte` icon name. |
+| `onclick` | `() => void` | Required. Invoked on click. |
+
+1-for-1 replica of mail's "+ Add Account" inline button at [`frontend/src/lib/components/sidebar/Sidebar.svelte:606-615`](../frontend/src/lib/components/sidebar/Sidebar.svelte) — same styling (`w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors`), same `px-3 py-2` outer wrapper, same `mdi:plus` default icon.
+
+**Intended placement**: at the bottom of the scrollable source/account list, BELOW the last source row — NOT in a separate footer strip. The primitive does not draw a divider; pair it with whatever sync-status / settings-cog footer chrome the sidebar already has (Calendar's `CalendarSidebar` is the reference: scrollable list with sources + `SidebarAddItem`, then a separate `border-t` footer with sync indicator + settings cog).
+
+Pairs with both manually-rolled sidebars (Calendar's case — `SourceSidebar`'s single-select keyboard nav didn't fit its multi-toggle visibility semantics) and `SourceSidebar`-based sidebars (render `SidebarAddItem` outside the `SourceSidebar` so its keyboard nav doesn't try to focus the button).
+
 #### `DetailPane` — header/body/empty-state shell
 
 [`frontend/src/lib/components/kit/DetailPane.svelte`](../frontend/src/lib/components/kit/DetailPane.svelte)
@@ -1364,6 +1389,48 @@ The `onDelete` handler typically opens a `ConfirmDialog` (see below) rather than
 Read-only shell — no keyboard ownership. Header is fixed; body scrolls. Empty-state can be customized via snippet or just `emptyIcon`/`emptyText` props.
 
 `DetailPane` is **self-managed responsive** — it reads `getLayoutMode` / `getResponsiveView` / `hideViewer` directly from `$lib/stores/layout.svelte` and applies `responsive-viewer-overlay` + `responsive-viewer-visible` to its outer `<section>` automatically when below the medium breakpoint. A back-arrow button is injected at the start of the header in narrow mode (calls `hideViewer`). Consumers don't pass responsive props or onBack handlers — the kit handles it.
+
+#### `DetailOverlay` — right-side detail panel with focus mode
+
+[`frontend/src/lib/components/kit/DetailOverlay.svelte`](../frontend/src/lib/components/kit/DetailOverlay.svelte)
+
+```svelte
+<DetailOverlay
+  open={selectedEventId !== null}
+  focused={eventFocusMode === 'event'}
+  title={selectedEvent?.summary}
+  onClose={() => calendarView.selectEvent(null)}
+  onToggleFocus={() => calendarView.toggleEventFocus()}
+>
+  {#snippet children()}
+    <EventDetail eventId={selectedEventId} />
+  {/snippet}
+</DetailOverlay>
+```
+
+| Prop | Type | Notes |
+|---|---|---|
+| `open` | `bindable boolean` | Drives mount + slide-in via `transition:fly`. Flip to false to dismiss. |
+| `focused` | `bindable boolean` | Drives full-window expansion. The kit toggles this through `onToggleFocus`; consumers may also flip it directly. |
+| `title` | `string?` | Shown in the header — used most visibly in responsive mode where it sits next to the back button. |
+| `onClose` | `() => void?` | Called when the close button, responsive back button, or Esc-while-not-focused dismisses the overlay. |
+| `onToggleFocus` | `() => void?` | Called by the fullscreen toggle button OR Esc-while-focused (which exits focus rather than dismissing). |
+| `children` | `Snippet?` | The body content. Rendered inside an `overflow-y-auto` container. |
+
+**Greenfield primitive (R25)** — no mail counterpart. Mail's `ConversationViewer` is part of the 3-column flex chain, not a fixed overlay. The 1-for-1 rule's backwards-compat test does not apply here; see the [Greenfield exception in §"The 1-for-1 rule"](#the-1-for-1-rule).
+
+**Three positioning modes**, driven by `focused` and `isResponsive()` from `$lib/stores/layout.svelte`:
+- **Regular desktop** (`focused=false`, not responsive): `position: fixed; right:0; top:0; bottom:0; w-[340px]`. Right-anchored sidebar overlay. **No scrim** — the view underneath stays interactive, so consumers can swap the children content (e.g., select a different row in the underlying list) without dismissing the overlay.
+- **Focused desktop** (`focused=true`): `position: fixed; inset:0`. Full-window. Reuses the same component tree; just a class swap with a 200ms ease-out transition.
+- **Responsive** (narrow breakpoint, regardless of `focused`): `position: fixed; inset:0` AND a back button auto-injected at the start of the header (calls `onClose`). Mirrors mail's `MessageViewer` responsive back-button placement.
+
+**Header chrome**: title text in the center; focus toggle (`mdi:fullscreen` / `mdi:fullscreen-exit`) and close (`mdi:close`) buttons on the right.
+
+**Esc handling**: while `open`, a window-level keydown listener intercepts Escape. If `focused=true`, it calls `onToggleFocus` (exits focus, stays open). Otherwise it calls `onClose` (dismisses). `preventDefault` + `stopPropagation` so mail's global handler and dialog handlers don't double-fire.
+
+**Containing-block caveat** (`position: fixed`): the overlay positions relative to the viewport ONLY when no ancestor has `transform`, `filter`, `perspective`, `contain: layout`/`contain: paint`, or `will-change` set to anything other than `auto`. The current ancestor chain (App.svelte → rail → extension pane) has none of these. Before adding any of those properties to a wrapping div, test the overlay or it will mis-position. Captured in the component's own header comment as well.
+
+**Animation**: slide-in from the right via `transition:fly={{ x: 360, duration: 200, easing: cubicOut }}` on mount; reverse on unmount. Mounted-and-state-swap (open→open with different children data) does NOT re-animate — the children snippet just re-renders in place.
 
 #### `PaneLayout` — outer container for 3-column extension panes
 
@@ -1544,7 +1611,7 @@ Alt+H/L pane cycling already cycles through these three slot names — when an e
 
 When a future extension needs a primitive that doesn't exist yet (e.g., Calendar's grid view):
 
-1. **Find the mail equivalent first.** Open the matching `frontend/src/lib/components/{list,sidebar,viewer,ui,...}/` file and study how it handles keyboard, focus, scroll-into-view, and edge cases. The 1-for-1 rule starts here.
+1. **Find the mail equivalent first.** Open the matching `frontend/src/lib/components/{list,sidebar,viewer,ui,...}/` file and study how it handles keyboard, focus, scroll-into-view, and edge cases. The 1-for-1 rule starts here. **If mail has no equivalent** (e.g., overlays that aren't part of the flex chain), the primitive is greenfield per [R25](./EXT_RULES.md) — design from the consumer's needs while respecting kit conventions (theme tokens, density-aware sizing, layout-store responsive handling, `shortcuts.ts` predicates). See `DetailOverlay` for an example.
 2. **Build the kit primitive to match that behavior exactly.** Where the host already has a working primitive in `ui/` (`Button`, `Input`, `Dialog`, `AlertDialog`, etc.), wrap it as a thin pass-through — see [`ConfirmDialog.svelte`](../frontend/src/lib/components/kit/ConfirmDialog.svelte) for the canonical example. Where the kit has to copy (j/k navigation, accent-bar selection, density), copy faithfully and reference the same `shortcuts.ts` predicates.
 3. **Don't reach into mail's components** (`frontend/src/lib/components/{list,sidebar,viewer}/`). Those are the live mail UI, not reusable primitives. Copy the pattern, don't import it.
 4. **If you find a bug in the host primitive that affects the kit, fix it at the host layer** so mail benefits too. Don't patch the kit wrapper — that creates drift that breaks the 1-for-1 contract. Same code paths, same behavior, same fixes.

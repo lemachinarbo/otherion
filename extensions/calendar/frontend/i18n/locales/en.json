@@ -64,6 +64,32 @@
       "syncFailed": "Sync failed for {name}: {message}",
       "sourceDeleted": "Removed {name}",
       "visibilityChanged": "Calendar visibility updated"
+    },
+    "detail": {
+      "noTitle": "(no title)",
+      "whenLabel": "When",
+      "whereLabel": "Where",
+      "repeatsLabel": "Repeats",
+      "aboutLabel": "About",
+      "calendarLabel": "Calendar",
+      "uidLabel": "UID",
+      "lastSyncLabel": "Last sync",
+      "lastSync": "{time}",
+      "lastSyncNever": "Not synced yet",
+      "allDay": "all day",
+      "focusEnter": "Enter focus mode",
+      "focusExit": "Exit focus mode",
+      "close": "Close",
+      "back": "Back"
+    },
+    "rrule": {
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "weeklyOn": "Weekly on {days}",
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "until": "until {date}",
+      "count": "({count} occurrences)"
     }
   }
 }

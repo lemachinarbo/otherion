@@ -1,0 +1,273 @@
+<script lang="ts">
+  // EventDetail — the read-only body content rendered inside DetailOverlay
+  // when an event is selected. Fetches the event via Calendar_GetEvent
+  // whenever eventId changes; renders a labeled vertical key/value layout
+  // sized for the ~340px sidebar overlay.
+
+  import { _, locale } from 'svelte-i18n'
+  import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
+  // @ts-ignore - wailsjs bindings
+  import { Calendar_GetEvent } from '$wailsjs/go/app/App.js'
+  // @ts-ignore - wailsjs bindings
+  import type { backend } from '$wailsjs/go/models'
+
+  interface Props {
+    eventId: string | null
+  }
+
+  let { eventId }: Props = $props()
+
+  let event = $state<backend.Event | null>(null)
+  let loading = $state(false)
+  let loadError = $state<string | null>(null)
+
+  // Refetch when eventId changes. Null id → clear local state.
+  $effect(() => {
+    const id = eventId
+    if (id === null || id === '') {
+      event = null
+      loadError = null
+      loading = false
+      return
+    }
+    loading = true
+    loadError = null
+    Calendar_GetEvent(id)
+      .then((ev: backend.Event) => {
+        // Drop result if a newer fetch superseded us mid-flight.
+        if (eventId !== id) return
+        event = ev ?? null
+      })
+      .catch((err: unknown) => {
+        if (eventId !== id) return
+        loadError = err instanceof Error ? err.message : String(err)
+      })
+      .finally(() => {
+        if (eventId === id) loading = false
+      })
+  })
+
+  // Calendar + source labels for the header. Sources store is already loaded
+  // by CalendarPane on mount — no need to refetch here.
+  const calendarInfo = $derived.by(() => {
+    if (!event) return null
+    for (const src of calendarSources.sources) {
+      const cals = calendarSources.calendarsBySource[src.id] || []
+      for (const cal of cals) {
+        if (cal.id === event.calendarId) {
+          return { source: src, calendar: cal }
+        }
+      }
+    }
+    return null
+  })
+
+  const color = $derived(event ? calendarSources.colorOf(event.calendarId) : '#999999')
+
+  // Locale-aware date / time / datetime formatters. Use the current
+  // svelte-i18n locale so display matches the user's chosen UI language.
+  const dateFmt = $derived(new Intl.DateTimeFormat($locale || undefined, {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+  }))
+  const timeFmt = $derived(new Intl.DateTimeFormat($locale || undefined, {
+    hour: '2-digit', minute: '2-digit',
+  }))
+
+  const whenLabel = $derived.by(() => {
+    if (!event) return ''
+    const start = new Date(event.dtstartUnix * 1000)
+    const end = new Date(event.dtendUnix * 1000)
+    if (event.isAllDay) {
+      return `${dateFmt.format(start)} (${$_('calendar.detail.allDay')})`
+    }
+    const sameDay = start.toDateString() === end.toDateString()
+    if (sameDay) {
+      return `${dateFmt.format(start)} · ${timeFmt.format(start)} – ${timeFmt.format(end)}`
+    }
+    return `${dateFmt.format(start)} ${timeFmt.format(start)} → ${dateFmt.format(end)} ${timeFmt.format(end)}`
+  })
+
+  // Recurrence humanizer. Recognizes the common shapes; unknown shapes
+  // fall through to the raw RRULE text in mono.
+  const repeatsLabel = $derived.by(() => humanizeRRule(event?.rruleText ?? ''))
+
+  // Last-sync relative label for the calendar.
+  const lastSyncLabel = $derived.by(() => {
+    const last = calendarInfo?.calendar?.lastSyncedAt ?? 0
+    if (last === 0) return $_('calendar.detail.lastSyncNever')
+    const elapsed = Math.floor(Date.now() / 1000) - last
+    if (elapsed < 60) return $_('calendar.detail.lastSync', { values: { time: 'just now' } })
+    if (elapsed < 3600) return $_('calendar.detail.lastSync', { values: { time: `${Math.floor(elapsed / 60)}m ago` } })
+    if (elapsed < 86400) return $_('calendar.detail.lastSync', { values: { time: `${Math.floor(elapsed / 3600)}h ago` } })
+    return $_('calendar.detail.lastSync', { values: { time: `${Math.floor(elapsed / 86400)}d ago` } })
+  })
+
+  function humanizeRRule(rruleText: string): { human: string; raw: string } {
+    if (rruleText === '') return { human: '', raw: '' }
+    const parts = parseRRule(rruleText)
+    const freq = parts.FREQ
+    let base: string
+    if (freq === 'DAILY') {
+      base = $_('calendar.rrule.daily')
+    } else if (freq === 'WEEKLY') {
+      const days = parts.BYDAY ? humanizeByDay(parts.BYDAY) : ''
+      base = days !== ''
+        ? $_('calendar.rrule.weeklyOn', { values: { days } })
+        : $_('calendar.rrule.weekly')
+    } else if (freq === 'MONTHLY') {
+      base = $_('calendar.rrule.monthly')
+    } else if (freq === 'YEARLY') {
+      base = $_('calendar.rrule.yearly')
+    } else {
+      return { human: '', raw: rruleText }
+    }
+    if (parts.UNTIL) {
+      const untilDate = parseICSDate(parts.UNTIL)
+      if (untilDate) {
+        base += ' ' + $_('calendar.rrule.until', { values: { date: dateFmt.format(untilDate) } })
+      }
+    }
+    if (parts.COUNT) {
+      base += ' ' + $_('calendar.rrule.count', { values: { count: parts.COUNT } })
+    }
+    return { human: base, raw: rruleText }
+  }
+
+  function parseRRule(rrule: string): Record<string, string> {
+    const out: Record<string, string> = {}
+    // Strip optional "RRULE:" prefix; split on semicolons.
+    const body = rrule.startsWith('RRULE:') ? rrule.slice(6) : rrule
+    for (const segment of body.split(';')) {
+      const eq = segment.indexOf('=')
+      if (eq <= 0) continue
+      out[segment.slice(0, eq).toUpperCase().trim()] = segment.slice(eq + 1).trim()
+    }
+    return out
+  }
+
+  function humanizeByDay(byDay: string): string {
+    const map: Record<string, string> = {
+      MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday', TH: 'Thursday',
+      FR: 'Friday', SA: 'Saturday', SU: 'Sunday',
+    }
+    const days = byDay.split(',')
+      .map(d => d.replace(/^[+-]?\d+/, '').toUpperCase())
+      .map(d => map[d] || d)
+    return days.join(', ')
+  }
+
+  function parseICSDate(s: string): Date | null {
+    // RFC 5545 DATE-TIME-UTC: 20251215T140000Z
+    // Or DATE: 20251215
+    const m = s.match(/^(\d{4})(\d{2})(\d{2})(T(\d{2})(\d{2})(\d{2})Z?)?$/)
+    if (!m) return null
+    const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3])
+    if (m[4] === undefined) return new Date(Date.UTC(y, mo, d))
+    return new Date(Date.UTC(y, mo, d, Number(m[5]), Number(m[6]), Number(m[7])))
+  }
+</script>
+
+{#if loading}
+  <div class="p-4 text-sm text-muted-foreground">
+    {$_('calendar.common.loading')}
+  </div>
+{/if}
+
+{#if loadError !== null}
+  <div class="p-4 text-sm text-destructive">{loadError}</div>
+{/if}
+
+{#if event && !loading && loadError === null}
+  <div class="p-4 space-y-4">
+    <!-- Header: summary + calendar color tag -->
+    <div>
+      <h1 class="text-base font-semibold text-foreground break-words">
+        {event.summary || $_('calendar.detail.noTitle')}
+      </h1>
+      <div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+        <span
+          class="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+          style:background-color={color}
+          aria-hidden="true"
+        ></span>
+        <span class="truncate">
+          {calendarInfo?.source.name ?? ''} / {calendarInfo?.calendar.displayName ?? ''}
+        </span>
+      </div>
+    </div>
+
+    <div class="space-y-3 text-sm">
+      <!-- When -->
+      <div>
+        <div class="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">
+          {$_('calendar.detail.whenLabel')}
+        </div>
+        <div class="text-foreground break-words">{whenLabel}</div>
+        {#if event.tzName && event.tzName !== '' && !event.isAllDay}
+          <div class="text-xs text-muted-foreground mt-0.5">{event.tzName}</div>
+        {/if}
+      </div>
+
+      <!-- Where (skip if empty) -->
+      {#if event.location && event.location !== ''}
+        <div>
+          <div class="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">
+            {$_('calendar.detail.whereLabel')}
+          </div>
+          <div class="text-foreground break-words">{event.location}</div>
+        </div>
+      {/if}
+
+      <!-- Repeats (skip if non-recurring) -->
+      {#if event.rruleText && event.rruleText !== ''}
+        <div>
+          <div class="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">
+            {$_('calendar.detail.repeatsLabel')}
+          </div>
+          {#if repeatsLabel.human !== ''}
+            <div class="text-foreground break-words">{repeatsLabel.human}</div>
+          {/if}
+          {#if repeatsLabel.human === '' && repeatsLabel.raw !== ''}
+            <div class="text-foreground break-all text-xs font-mono">{repeatsLabel.raw}</div>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- About (skip if empty) -->
+      {#if event.description && event.description !== ''}
+        <div>
+          <div class="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">
+            {$_('calendar.detail.aboutLabel')}
+          </div>
+          <div class="text-foreground whitespace-pre-wrap break-words text-sm">{event.description}</div>
+        </div>
+      {/if}
+
+      <!-- Calendar -->
+      <div>
+        <div class="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">
+          {$_('calendar.detail.calendarLabel')}
+        </div>
+        <div class="text-foreground break-words">
+          {calendarInfo?.source.name ?? ''} / {calendarInfo?.calendar.displayName ?? ''}
+        </div>
+      </div>
+
+      <!-- UID (debug-y; small mono) -->
+      <div>
+        <div class="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">
+          {$_('calendar.detail.uidLabel')}
+        </div>
+        <div class="text-xs text-muted-foreground font-mono break-all">{event.uid}</div>
+      </div>
+
+      <!-- Last sync -->
+      <div>
+        <div class="text-xs uppercase tracking-wide text-muted-foreground mb-0.5">
+          {$_('calendar.detail.lastSyncLabel')}
+        </div>
+        <div class="text-xs text-muted-foreground">{lastSyncLabel}</div>
+      </div>
+    </div>
+  </div>
+{/if}

@@ -13,7 +13,7 @@
 
   import { _ } from 'svelte-i18n'
   import Icon from '@iconify/svelte'
-  import { Button } from '$lib/components/ui/button'
+  import SidebarAddItem from '$lib/components/kit/SidebarAddItem.svelte'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
   // @ts-ignore - wailsjs bindings
   import type { backend } from '$wailsjs/go/models'
@@ -106,33 +106,29 @@
         {/each}
       </div>
     {/each}
+
+    <!-- Add-source entry at the bottom of the scrollable list, matching mail. -->
+    <SidebarAddItem
+      label={$_('calendar.sidebar.addSource')}
+      onclick={() => onAddSource?.()}
+    />
   </div>
 
-  <!-- Bottom strip, anchored at the bottom. -->
-  <div class="flex flex-col gap-1 px-3 py-2 border-t border-border bg-background/40 shrink-0">
-    <Button
-      variant="ghost"
-      size="sm"
-      class="justify-start h-8"
-      onclick={() => onAddSource?.()}
+  <!-- Bottom strip: sync status + settings cog only (the add button now
+       lives inside the scrollable list above, matching mail's pattern). -->
+  <div class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-background/40 shrink-0 text-xs text-muted-foreground">
+    <span class="flex items-center gap-1 min-w-0 truncate">
+      <Icon icon="mdi:sync" class="w-3 h-3 shrink-0" />
+      <span class="truncate">{lastSyncedLabel}</span>
+    </span>
+    <button
+      class="p-1 rounded hover:bg-muted/40 shrink-0"
+      title={$_('calendar.sidebar.settings')}
+      onclick={() => onOpenSettings?.()}
+      type="button"
+      aria-label={$_('calendar.sidebar.settings')}
     >
-      <Icon icon="mdi:plus" class="w-4 h-4 mr-1" />
-      {$_('calendar.sidebar.addSource')}
-    </Button>
-    <div class="flex items-center justify-between text-xs text-muted-foreground">
-      <span class="flex items-center gap-1 min-w-0 truncate">
-        <Icon icon="mdi:sync" class="w-3 h-3 shrink-0" />
-        <span class="truncate">{lastSyncedLabel}</span>
-      </span>
-      <button
-        class="p-1 rounded hover:bg-muted/40 shrink-0"
-        title={$_('calendar.sidebar.settings')}
-        onclick={() => onOpenSettings?.()}
-        type="button"
-        aria-label={$_('calendar.sidebar.settings')}
-      >
-        <Icon icon="mdi:cog-outline" class="w-3.5 h-3.5" />
-      </button>
-    </div>
+      <Icon icon="mdi:cog-outline" class="w-3.5 h-3.5" />
+    </button>
   </div>
 </aside>

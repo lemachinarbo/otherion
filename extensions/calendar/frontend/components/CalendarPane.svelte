@@ -14,9 +14,11 @@
   import { onMount, onDestroy } from 'svelte'
   import { _ } from 'svelte-i18n'
   import PaneLayout from '$lib/components/kit/PaneLayout.svelte'
+  import DetailOverlay from '$lib/components/kit/DetailOverlay.svelte'
   import CalendarSidebar from './CalendarSidebar.svelte'
   import ViewSwitcher from './ViewSwitcher.svelte'
   import MonthView from './views/MonthView.svelte'
+  import EventDetail from './EventDetail.svelte'
   import AddCalDAVSourceDialog from './AddCalDAVSourceDialog.svelte'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
   import { calendarView } from '$extensions/calendar/frontend/stores/calendarView.svelte'
@@ -63,16 +65,32 @@
   const unregSync = registerExtensionShortcut('calendar', KEY.CALENDAR_SYNC, () => {
     void calendarSources.syncAll()
   })
+  const unregFocus = registerExtensionShortcut('calendar', KEY.CALENDAR_FOCUS_TOGGLE, () => {
+    calendarView.toggleEventFocus()
+  })
   onDestroy(() => {
     unregToday()
     unregPrev()
     unregNext()
     unregSync()
+    unregFocus()
   })
 
   function openSettings() {
     openExtensionSettings('calendar')
   }
+
+  // Title shown in the overlay header (responsive back-bar / focused mode).
+  // Pulled from the visible-window instance cache so we don't fetch twice;
+  // EventDetail does its own Calendar_GetEvent for the full record.
+  const overlayTitle = $derived.by(() => {
+    const id = calendarView.selectedEventId
+    if (id === null) return ''
+    for (const inst of events.instances) {
+      if (inst.id === id) return inst.summary || ''
+    }
+    return ''
+  })
 </script>
 
 <PaneLayout>
@@ -89,5 +107,17 @@
     {/if}
   </div>
 </PaneLayout>
+
+<DetailOverlay
+  open={calendarView.selectedEventId !== null}
+  focused={calendarView.eventFocusMode === 'event'}
+  title={overlayTitle}
+  onClose={() => calendarView.selectEvent(null)}
+  onToggleFocus={() => calendarView.toggleEventFocus()}
+>
+  {#snippet children()}
+    <EventDetail eventId={calendarView.selectedEventId} />
+  {/snippet}
+</DetailOverlay>
 
 <AddCalDAVSourceDialog bind:open={showAddSource} />

@@ -23,9 +23,14 @@ export const CALENDAR_NEXT = (e: KeyboardEvent): boolean =>
 export const CALENDAR_SYNC = (e: KeyboardEvent): boolean =>
   e.key === 'r' && ctrlOrMeta(e) && !e.shiftKey && !e.altKey
 
+/** `f` — toggle focus mode for the selected event (no-op if no event selected). */
+export const CALENDAR_FOCUS_TOGGLE = (e: KeyboardEvent): boolean =>
+  e.key === 'f' && noMods(e)
+
 export const KEY = {
   CALENDAR_TODAY,
   CALENDAR_PREV,
   CALENDAR_NEXT,
   CALENDAR_SYNC,
+  CALENDAR_FOCUS_TOGGLE,
 }
