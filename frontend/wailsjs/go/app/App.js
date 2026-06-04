@@ -42,12 +42,20 @@ export function Calendar_AddCalDAVSource(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['Calendar_AddCalDAVSource'](arg1, arg2, arg3, arg4);
 }
 
+export function Calendar_AddGoogleSource(arg1, arg2, arg3) {
+  return window['go']['app']['App']['Calendar_AddGoogleSource'](arg1, arg2, arg3);
+}
+
 export function Calendar_AddLocalCalendar(arg1, arg2, arg3) {
   return window['go']['app']['App']['Calendar_AddLocalCalendar'](arg1, arg2, arg3);
 }
 
 export function Calendar_AddLocalSource(arg1) {
   return window['go']['app']['App']['Calendar_AddLocalSource'](arg1);
+}
+
+export function Calendar_AddMicrosoftSource(arg1, arg2, arg3) {
+  return window['go']['app']['App']['Calendar_AddMicrosoftSource'](arg1, arg2, arg3);
 }
 
 export function Calendar_CreateEvent(arg1) {
@@ -80,6 +88,14 @@ export function Calendar_ListCalendars(arg1) {
 
 export function Calendar_ListEventsInRange(arg1, arg2, arg3) {
   return window['go']['app']['App']['Calendar_ListEventsInRange'](arg1, arg2, arg3);
+}
+
+export function Calendar_ListGoogleCalendarsForAccount(arg1) {
+  return window['go']['app']['App']['Calendar_ListGoogleCalendarsForAccount'](arg1);
+}
+
+export function Calendar_ListMicrosoftCalendarsForAccount(arg1) {
+  return window['go']['app']['App']['Calendar_ListMicrosoftCalendarsForAccount'](arg1);
 }
 
 export function Calendar_ListSources() {

@@ -39,9 +39,13 @@ export function BroadcastThemeChange(arg1:string):Promise<void>;
 
 export function Calendar_AddCalDAVSource(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 
+export function Calendar_AddGoogleSource(arg1:string,arg2:string,arg3:Array<backend.GoogleCalendarSelection>):Promise<string>;
+
 export function Calendar_AddLocalCalendar(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function Calendar_AddLocalSource(arg1:string):Promise<string>;
+
+export function Calendar_AddMicrosoftSource(arg1:string,arg2:string,arg3:Array<backend.MicrosoftCalendarSelection>):Promise<string>;
 
 export function Calendar_CreateEvent(arg1:backend.EventInput):Promise<string>;
 
@@ -58,6 +62,10 @@ export function Calendar_GetEvent(arg1:string):Promise<backend.Event>;
 export function Calendar_ListCalendars(arg1:string):Promise<Array<backend.Calendar>>;
 
 export function Calendar_ListEventsInRange(arg1:Array<string>,arg2:number,arg3:number):Promise<Array<backend.EventInstance>>;
+
+export function Calendar_ListGoogleCalendarsForAccount(arg1:string):Promise<Array<backend.GoogleCalendarChoice>>;
+
+export function Calendar_ListMicrosoftCalendarsForAccount(arg1:string):Promise<Array<backend.MicrosoftCalendarChoice>>;
 
 export function Calendar_ListSources():Promise<Array<backend.Source>>;
 

@@ -12,6 +12,7 @@
   // refetch of the current window without changing view state.
 
   import { onMount, onDestroy } from 'svelte'
+  import { _ } from 'svelte-i18n'
   import PaneLayout from '$lib/components/kit/PaneLayout.svelte'
   import DetailOverlay from '$lib/components/kit/DetailOverlay.svelte'
   import CalendarSidebar from './CalendarSidebar.svelte'
@@ -28,6 +29,9 @@
   import { openExtensionSettings } from '$lib/stores/extensionRegistry.svelte'
   import { consumePendingDeepLink } from '$lib/stores/extensionDeepLink.svelte'
   import { KEY } from '$extensions/calendar/frontend/keyboard/shortcuts'
+  import { toasts } from '$lib/stores/toast'
+  // @ts-ignore - wailsjs bindings
+  import { EventsOn } from '$wailsjs/runtime/runtime.js'
 
   // Subscribe to `calendar:sync-complete` once, on mount.
   //
@@ -42,6 +46,16 @@
       fromUnix: calendarView.visibleRange.fromUnix,
       toUnix: calendarView.visibleRange.toUnix,
     }))
+    // Phase 2 Chunk 5: the host syncer's pending-write queue drains on
+    // network-online / wake / sync tick. When it hits a 412 conflict, it
+    // drops the pending row and publishes `calendar:write-conflict` —
+    // surface a toast so the user knows to re-edit.
+    EventsOn('calendar:write-conflict', () => {
+      toasts.error($_('calendar.write.conflict'))
+    })
+    EventsOn('calendar:write-queued', () => {
+      toasts.info($_('calendar.write.queued'))
+    })
     const pending = consumePendingDeepLink('calendar')
     const prefix = '/event/'
     if (pending && pending.startsWith(prefix)) {

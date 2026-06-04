@@ -113,18 +113,21 @@ async function setColor(calendarID: string, hex: string) {
   calendarsBySource = { ...calendarsBySource }
 }
 
-// sourceTypeOf returns the type of the source that owns this calendar
-// ('caldav' or 'local'), or '' if not found. EventDetail uses it to gate
-// the Edit/Delete buttons to local-source events only (CalDAV writes are
-// Phase 2).
-function sourceTypeOf(calendarID: string): string {
+// isWritable returns true when the source that owns this calendar accepts
+// event CRUD. Local sources are always writable; CalDAV sources flip to
+// writable=true after AddCalDAVSource (new) or after the first successful
+// sync (existing, post-Chunk-1 upgrade). Future Google/Microsoft providers
+// will set it based on accessRole / canEdit. The frontend gates Edit /
+// Delete / "+ Event" affordances on this — provider type is invisible to
+// the UI past Chunk 2.
+function isWritable(calendarID: string): boolean {
   for (const src of sources) {
     const cals = calendarsBySource[src.id] || []
     for (const cal of cals) {
-      if (cal.id === calendarID) return src.type
+      if (cal.id === calendarID) return src.writable === true
     }
   }
-  return ''
+  return false
 }
 
 function colorOf(calendarID: string): string {
@@ -212,5 +215,5 @@ export const calendarSources = {
   setColor,
   colorOf,
   colorOfHex,
-  sourceTypeOf,
+  isWritable,
 }

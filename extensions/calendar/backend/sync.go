@@ -2,17 +2,12 @@ package backend
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/emersion/go-ical"
-	"github.com/emersion/go-webdav"
-	extcaldav "github.com/emersion/go-webdav/caldav"
 
 	coreapi "github.com/hkdb/aerion/internal/core/api/v1"
 )
@@ -31,6 +26,8 @@ type Syncer struct {
 	store    *Store
 	secrets  coreapi.Secrets
 	events   coreapi.EventBus
+	auth     coreapi.Auth   // for googleProvider + microsoftProvider's OAuth client; may be nil
+	queue    *PendingQueue  // drains after each per-source sync; may be nil
 	settings SettingsStore
 
 	mu            sync.Mutex
@@ -48,12 +45,16 @@ type Syncer struct {
 }
 
 // NewSyncer constructs a Syncer. Caller must call Start to begin the
-// per-source goroutines + event subscriptions.
-func NewSyncer(store *Store, secrets coreapi.Secrets, events coreapi.EventBus, settings SettingsStore) *Syncer {
+// per-source goroutines + event subscriptions. auth and queue may be nil
+// (CalDAV + local sources sync without auth; the per-source Drain step
+// is skipped without a queue).
+func NewSyncer(store *Store, secrets coreapi.Secrets, events coreapi.EventBus, settings SettingsStore, auth coreapi.Auth, queue *PendingQueue) *Syncer {
 	return &Syncer{
 		store:         store,
 		secrets:       secrets,
 		events:        events,
+		auth:          auth,
+		queue:         queue,
 		settings:      settings,
 		sourceCancels: make(map[string]context.CancelFunc),
 		busy:          make(map[string]bool),
@@ -196,27 +197,13 @@ func (s *Syncer) syncSourceInner(ctx context.Context, sourceID string) error {
 	if err != nil {
 		return fmt.Errorf("load source: %w", err)
 	}
-	if src.Type != "caldav" {
-		// Phase 2 will add 'google' / 'microsoft' types.
-		return nil
-	}
 
-	password, err := s.secrets.Get(sourceID)
-	if err != nil {
-		return fmt.Errorf("load password: %w", err)
-	}
-	if password == "" {
-		return fmt.Errorf("no password stored for source — re-add it in settings")
-	}
-
-	httpClient := webdav.HTTPClientWithBasicAuth(
-		newCalDAVSyncHTTPClient(60*time.Second),
-		src.Username, password,
-	)
-	client, err := extcaldav.NewClient(httpClient, src.URL)
-	if err != nil {
-		return fmt.Errorf("new caldav client: %w", err)
-	}
+	provider := ProviderForSource(*src, ProviderDeps{
+		Store:   s.store,
+		Secrets: s.secrets,
+		Events:  s.events,
+		Auth:    s.auth,
+	})
 
 	calendars, err := s.store.ListCalendars(sourceID)
 	if err != nil {
@@ -227,7 +214,7 @@ func (s *Syncer) syncSourceInner(ctx context.Context, sourceID string) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := s.syncCalendar(ctx, client, cal); err != nil {
+		if err := provider.SyncCalendar(ctx, *src, cal); err != nil {
 			// One bad calendar shouldn't block the rest; log via the
 			// source-error event but keep going.
 			_ = s.events.Publish("calendar:source-error", map[string]any{
@@ -237,156 +224,24 @@ func (s *Syncer) syncSourceInner(ctx context.Context, sourceID string) error {
 			})
 		}
 	}
+
+	// One-time writable backfill for existing CalDAV sources that
+	// pre-date Chunk 1 (migration v5 left them at writable=0). Trust-
+	// on-first-write: the source's PUT capability is verified the next
+	// time the user tries to write. Doesn't apply to local (already
+	// writable=1 from migration) or to fresh CalDAV adds (AddCalDAVSource
+	// sets writable=true at insert).
+	if src.Type == SourceTypeCalDAV && !src.Writable {
+		_ = s.store.SetSourceWritable(src.ID, true)
+	}
+
+	// Drain any pending writes that piled up while we were offline. Runs
+	// after sync so the queued replays see the latest server state.
+	if s.queue != nil {
+		_ = s.queue.Drain(ctx, sourceID)
+	}
+
 	return nil
-}
-
-func (s *Syncer) syncCalendar(ctx context.Context, client *extcaldav.Client, cal Calendar) error {
-	query := &extcaldav.CalendarQuery{
-		CompRequest: extcaldav.CalendarCompRequest{
-			Name:     "VCALENDAR",
-			AllProps: true,
-			AllComps: true,
-		},
-		CompFilter: extcaldav.CompFilter{
-			Name: "VCALENDAR",
-			Comps: []extcaldav.CompFilter{
-				{Name: "VEVENT"},
-			},
-		},
-	}
-
-	objects, err := client.QueryCalendar(ctx, cal.URL, query)
-	if err != nil {
-		return fmt.Errorf("query calendar %q: %w", cal.DisplayName, err)
-	}
-
-	// Index server response by UID for diff against local. Also retain
-	// the parsed ParsedObject + ETag + href so we can upsert in one pass.
-	type serverEntry struct {
-		etag    string
-		href    string
-		parsed  *ParsedObject
-		rawICS  string
-	}
-	server := make(map[string]serverEntry, len(objects))
-	for _, obj := range objects {
-		if obj.Data == nil {
-			continue
-		}
-		rawICS, encErr := encodeICS(obj.Data)
-		if encErr != nil {
-			// Skip malformed objects rather than abort the whole sync.
-			continue
-		}
-		parsed, perr := ParseCalendarObject(rawICS)
-		if perr != nil {
-			continue
-		}
-		server[parsed.Master.UID] = serverEntry{
-			etag:   obj.ETag,
-			href:   obj.Path,
-			parsed: parsed,
-			rawICS: rawICS,
-		}
-	}
-
-	// Local snapshot.
-	localETags, err := s.store.ListEventETags(cal.ID)
-	if err != nil {
-		return fmt.Errorf("list local etags: %w", err)
-	}
-
-	return s.store.WithTx(func(tx *sql.Tx) error {
-		// Upsert NEW + CHANGED.
-		for uid, srv := range server {
-			localETag, exists := localETags[uid]
-			if exists && localETag == srv.etag && srv.etag != "" {
-				continue // unchanged; skip
-			}
-
-			// New row → fresh UUID. Existing row → keep its ID by relying
-			// on the UNIQUE(calendar_id, uid) constraint + ON CONFLICT
-			// behavior in UpsertEventTx.
-			eventID := uuid.New().String()
-			if exists {
-				if existing, err := s.lookupEventIDByUID(cal.ID, uid); err == nil && existing != "" {
-					eventID = existing
-				}
-			}
-
-			ev := srv.parsed.Master
-			ev.ID = eventID
-			ev.CalendarID = cal.ID
-			ev.ETag = srv.etag
-			ev.Href = srv.href
-
-			if err := s.store.UpsertEventTx(tx, ev); err != nil {
-				return err
-			}
-
-			// Re-write overrides for this event. Simpler than diffing —
-			// the override count is typically small. Delete existing
-			// overrides first, then insert new ones from the parsed
-			// object. (No DeleteOverrides helper yet; inline the SQL.)
-			if _, err := tx.Exec(
-				`DELETE FROM event_recurrence_overrides WHERE event_id = ?`,
-				eventID,
-			); err != nil {
-				return fmt.Errorf("clear old overrides: %w", err)
-			}
-			for _, ov := range srv.parsed.Overrides {
-				if err := s.store.UpsertOverrideTx(tx, eventID, ov.RecurrenceIDUnix, ov.ICSBlob); err != nil {
-					return err
-				}
-			}
-
-			// Compute VALARM instances for the next ~7 days and upsert.
-			// INSERT OR IGNORE makes this idempotent across resyncs — once
-			// an alarm is fired or dismissed, the unique index prevents a
-			// fresh sync from resurrecting it.
-			now := time.Now()
-			alarmWindow := now.Add(7 * 24 * time.Hour)
-			instances, expErr := ExpandInRange(ev, srv.parsed.Overrides, now, alarmWindow)
-			if expErr != nil {
-				return fmt.Errorf("expand for alarms: %w", expErr)
-			}
-			alarms, aerr := ExtractAlarms(ev, srv.parsed.Overrides, instances)
-			if aerr != nil {
-				return fmt.Errorf("extract alarms: %w", aerr)
-			}
-			for _, a := range alarms {
-				if err := s.store.UpsertAlarmTx(tx, a); err != nil {
-					return err
-				}
-			}
-		}
-
-		// Delete events that disappeared from the server.
-		for uid := range localETags {
-			if _, stillOnServer := server[uid]; stillOnServer {
-				continue
-			}
-			if err := s.store.DeleteEventByUIDTx(tx, cal.ID, uid); err != nil {
-				return err
-			}
-		}
-
-		// Update calendar's last_synced_at. Ctag stays NULL for now —
-		// the v1 sync ignores it.
-		return s.store.UpdateCalendarCtagTx(tx, cal.ID, "", time.Now().Unix())
-	})
-}
-
-func (s *Syncer) lookupEventIDByUID(calendarID, uid string) (string, error) {
-	var id string
-	err := s.store.DB().QueryRow(
-		`SELECT id FROM events WHERE calendar_id = ? AND uid = ?`,
-		calendarID, uid,
-	).Scan(&id)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	return id, err
 }
 
 // startSourceLoop starts (or replaces) the per-source ticker goroutine.

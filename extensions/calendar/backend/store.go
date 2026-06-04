@@ -149,6 +149,52 @@ var migrations = []extensions.Migration{
 				ON event_alarms(event_id, instance_unix, trigger_unix);
 		`,
 	},
+	{
+		Version: 5,
+		SQL: `
+			-- Phase 2 groundwork: writability flag + provider event ID + offline
+			-- write outbox. Lays the schema before Chunks 2–7 (CalDAV write,
+			-- Google + Microsoft providers, offline queue) add their consumers.
+			--
+			-- writable: 1 = the source supports event CRUD. Set at insert time
+			-- from the provider's Capabilities().CanWrite. Local sources flip
+			-- to 1 here so existing Phase 3 users keep their Edit/Delete
+			-- affordances after upgrade; CalDAV stays 0 until Chunk 2 wires
+			-- PUT/DELETE and we re-probe.
+			--
+			-- provider_event_id: server-assigned event identifier — Google's
+			-- eventId, Microsoft Graph's id. CalDAV uses events.href; local
+			-- leaves this empty. Not derivable from events.uid (Google assigns
+			-- its own id distinct from the ICS UID), so it must be stored
+			-- separately when its provider populates it.
+			--
+			-- pending_writes: outbox row per offline / failed write attempt.
+			-- Drained by the offline queue (Chunk 5) on system:network-online
+			-- and on each successful sync. Empty until Chunk 5's enqueue path
+			-- ships.
+
+			ALTER TABLE calendar_sources ADD COLUMN writable INTEGER NOT NULL DEFAULT 0;
+			UPDATE calendar_sources SET writable = 1 WHERE type = 'local';
+
+			ALTER TABLE events ADD COLUMN provider_event_id TEXT NOT NULL DEFAULT '';
+
+			CREATE TABLE IF NOT EXISTS pending_writes (
+				id                TEXT PRIMARY KEY,
+				source_id         TEXT NOT NULL REFERENCES calendar_sources(id) ON DELETE CASCADE,
+				calendar_id       TEXT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+				event_id          TEXT,
+				op                TEXT NOT NULL,
+				scope             TEXT,
+				payload_json      TEXT NOT NULL,
+				attempt           INTEGER NOT NULL DEFAULT 0,
+				last_attempt_unix INTEGER,
+				last_error        TEXT,
+				created_unix      INTEGER NOT NULL
+			);
+			CREATE INDEX IF NOT EXISTS idx_pending_writes_source
+				ON pending_writes(source_id, created_unix);
+		`,
+	},
 }
 
 // Store wraps the per-extension DB for the Calendar extension. Lives in an
@@ -173,15 +219,22 @@ func NewStore(dataDir string) (*Store, error) {
 }
 
 // Source-type constants. Stored as plain strings in calendar_sources.type
-// (no enum / DB CHECK constraint) so future Phase 2 OAuth providers
-// (google, microsoft) just add new constants without a schema migration.
+// (no enum / DB CHECK constraint).
 const (
-	SourceTypeCalDAV = "caldav"
-	SourceTypeLocal  = "local"
+	SourceTypeCalDAV    = "caldav"
+	SourceTypeLocal     = "local"
+	SourceTypeGoogle    = "google"    // Phase 2 Chunk 3
+	SourceTypeMicrosoft = "microsoft" // Phase 2 Chunk 4
 )
 
 // Source is the Go type returned by the API + Wails methods for a calendar
 // source row. JSON tags drive the TS binding shape — keep stable.
+//
+// Writable is set at insert time from the provider's Capabilities().CanWrite
+// and re-evaluated on capability change (e.g., a CalDAV server gains PUT
+// support). The frontend gates Edit / Delete / "+ Event" affordances on
+// this flag rather than on source.type, so write semantics are uniform
+// across local + CalDAV + Google + Microsoft once each provider lands.
 type Source struct {
 	ID              string `json:"id"`
 	Type            string `json:"type"`
@@ -194,6 +247,7 @@ type Source struct {
 	LastErrorAt     int64  `json:"lastErrorAt,omitempty"`
 	AccountID       string `json:"accountId,omitempty"`
 	Enabled         bool   `json:"enabled"`
+	Writable        bool   `json:"writable"`
 	CreatedAt       int64  `json:"createdAt"`
 }
 
@@ -242,14 +296,29 @@ func (s *Store) CreateSourceTx(tx *sql.Tx, src Source) error {
 		INSERT INTO calendar_sources (
 			id, type, name, url, username, sync_interval_min,
 			last_synced_at, last_error, last_error_at,
-			account_id, enabled, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			account_id, enabled, writable, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		src.ID, src.Type, src.Name, src.URL, src.Username, src.SyncIntervalMin,
 		nullIfZero(src.LastSyncedAt), nullIfEmpty(src.LastError), nullIfZero(src.LastErrorAt),
-		nullIfEmpty(src.AccountID), boolToInt(src.Enabled), src.CreatedAt,
+		nullIfEmpty(src.AccountID), boolToInt(src.Enabled), boolToInt(src.Writable), src.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert calendar_source: %w", err)
+	}
+	return nil
+}
+
+// SetSourceWritable updates the writable flag on a calendar_sources row.
+// Called when a provider's capability changes (e.g., a CalDAV server gains
+// PUT support, or a Google OAuth scope flips from .readonly to .events).
+// Idempotent.
+func (s *Store) SetSourceWritable(id string, writable bool) error {
+	_, err := s.DB().Exec(
+		`UPDATE calendar_sources SET writable = ? WHERE id = ?`,
+		boolToInt(writable), id,
+	)
+	if err != nil {
+		return fmt.Errorf("set source writable: %w", err)
 	}
 	return nil
 }
@@ -259,18 +328,19 @@ func (s *Store) GetSource(id string) (*Source, error) {
 	row := s.DB().QueryRow(`
 		SELECT id, type, name, url, username, sync_interval_min,
 		       COALESCE(last_synced_at, 0), COALESCE(last_error, ''), COALESCE(last_error_at, 0),
-		       COALESCE(account_id, ''), enabled, created_at
+		       COALESCE(account_id, ''), enabled, writable, created_at
 		FROM calendar_sources WHERE id = ?`, id)
 	src := &Source{}
-	var enabled int
+	var enabled, writable int
 	if err := row.Scan(
 		&src.ID, &src.Type, &src.Name, &src.URL, &src.Username, &src.SyncIntervalMin,
 		&src.LastSyncedAt, &src.LastError, &src.LastErrorAt,
-		&src.AccountID, &enabled, &src.CreatedAt,
+		&src.AccountID, &enabled, &writable, &src.CreatedAt,
 	); err != nil {
 		return nil, err
 	}
 	src.Enabled = enabled != 0
+	src.Writable = writable != 0
 	return src, nil
 }
 
@@ -279,7 +349,7 @@ func (s *Store) ListSources() ([]Source, error) {
 	rows, err := s.DB().Query(`
 		SELECT id, type, name, url, username, sync_interval_min,
 		       COALESCE(last_synced_at, 0), COALESCE(last_error, ''), COALESCE(last_error_at, 0),
-		       COALESCE(account_id, ''), enabled, created_at
+		       COALESCE(account_id, ''), enabled, writable, created_at
 		FROM calendar_sources ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("query calendar_sources: %w", err)
@@ -289,15 +359,16 @@ func (s *Store) ListSources() ([]Source, error) {
 	var out []Source
 	for rows.Next() {
 		var src Source
-		var enabled int
+		var enabled, writable int
 		if err := rows.Scan(
 			&src.ID, &src.Type, &src.Name, &src.URL, &src.Username, &src.SyncIntervalMin,
 			&src.LastSyncedAt, &src.LastError, &src.LastErrorAt,
-			&src.AccountID, &enabled, &src.CreatedAt,
+			&src.AccountID, &enabled, &writable, &src.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan calendar_source: %w", err)
 		}
 		src.Enabled = enabled != 0
+		src.Writable = writable != 0
 		out = append(out, src)
 	}
 	if err := rows.Err(); err != nil {
@@ -438,21 +509,32 @@ func boolToInt(b bool) int {
 // Event is the master representation of a calendar event in storage. For
 // recurring events, exactly one Event row exists per UID; per-instance
 // overrides live in EventOverride. JSON tags drive the TS binding shape.
+//
+// Server identity is provider-specific:
+//   - CalDAV: Href (e.g. /calendars/user/personal/abc.ics) + ETag for If-Match.
+//   - Google: ProviderEventID (server-assigned eventId) + ETag for If-Match.
+//   - Microsoft: ProviderEventID (Graph event id) + ETag.
+//   - Local: all empty.
+//
+// Provider-specific fields stay alongside ICS-shaped fields rather than
+// branching the struct per provider — keeps the read path uniform across
+// providers per Phase 2's ICS-blob-as-source-of-truth decision.
 type Event struct {
-	ID          string `json:"id"`
-	CalendarID  string `json:"calendarId"`
-	UID         string `json:"uid"`
-	ETag        string `json:"etag"`
-	Href        string `json:"href"`
-	Summary     string `json:"summary"`
-	Description string `json:"description,omitempty"`
-	Location    string `json:"location,omitempty"`
-	DTStartUnix int64  `json:"dtstartUnix"`
-	DTEndUnix   int64  `json:"dtendUnix"`
-	IsAllDay    bool   `json:"isAllDay"`
-	TZName      string `json:"tzName,omitempty"`
-	RRuleText   string `json:"rruleText,omitempty"`
-	ICSBlob     string `json:"-"` // not exposed to frontend; used by rrule_expand
+	ID              string `json:"id"`
+	CalendarID      string `json:"calendarId"`
+	UID             string `json:"uid"`
+	ETag            string `json:"etag"`
+	Href            string `json:"href"`
+	ProviderEventID string `json:"providerEventId,omitempty"`
+	Summary         string `json:"summary"`
+	Description     string `json:"description,omitempty"`
+	Location        string `json:"location,omitempty"`
+	DTStartUnix     int64  `json:"dtstartUnix"`
+	DTEndUnix       int64  `json:"dtendUnix"`
+	IsAllDay        bool   `json:"isAllDay"`
+	TZName          string `json:"tzName,omitempty"`
+	RRuleText       string `json:"rruleText,omitempty"`
+	ICSBlob         string `json:"-"` // not exposed to frontend; used by rrule_expand
 }
 
 // EventInstance is one occurrence of an Event in a queried time window.
@@ -491,14 +573,15 @@ func (s *Store) UpsertEventTx(tx *sql.Tx, ev Event) error {
 	}
 	_, err := tx.Exec(`
 		INSERT INTO events (
-			id, calendar_id, uid, etag, href,
+			id, calendar_id, uid, etag, href, provider_event_id,
 			summary, description, location,
 			dtstart_unix, dtend_unix, is_all_day, tz_name,
 			rrule_text, ics_blob
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(calendar_id, uid) DO UPDATE SET
 			etag = excluded.etag,
 			href = excluded.href,
+			provider_event_id = excluded.provider_event_id,
 			summary = excluded.summary,
 			description = excluded.description,
 			location = excluded.location,
@@ -508,7 +591,7 @@ func (s *Store) UpsertEventTx(tx *sql.Tx, ev Event) error {
 			tz_name = excluded.tz_name,
 			rrule_text = excluded.rrule_text,
 			ics_blob = excluded.ics_blob`,
-		ev.ID, ev.CalendarID, ev.UID, ev.ETag, ev.Href,
+		ev.ID, ev.CalendarID, ev.UID, ev.ETag, ev.Href, ev.ProviderEventID,
 		ev.Summary, nullIfEmpty(ev.Description), nullIfEmpty(ev.Location),
 		ev.DTStartUnix, ev.DTEndUnix, boolToInt(ev.IsAllDay), nullIfEmpty(ev.TZName),
 		nullIfEmpty(ev.RRuleText), ev.ICSBlob,
@@ -558,7 +641,7 @@ func (s *Store) ListEventETags(calendarID string) (map[string]string, error) {
 // GetEvent returns a single event by ID, or sql.ErrNoRows when missing.
 func (s *Store) GetEvent(id string) (*Event, error) {
 	row := s.DB().QueryRow(`
-		SELECT id, calendar_id, uid, etag, href,
+		SELECT id, calendar_id, uid, etag, href, provider_event_id,
 		       summary, COALESCE(description, ''), COALESCE(location, ''),
 		       dtstart_unix, dtend_unix, is_all_day, COALESCE(tz_name, ''),
 		       COALESCE(rrule_text, ''), ics_blob
@@ -566,7 +649,7 @@ func (s *Store) GetEvent(id string) (*Event, error) {
 	ev := &Event{}
 	var isAllDay int
 	if err := row.Scan(
-		&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Href,
+		&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Href, &ev.ProviderEventID,
 		&ev.Summary, &ev.Description, &ev.Location,
 		&ev.DTStartUnix, &ev.DTEndUnix, &isAllDay, &ev.TZName,
 		&ev.RRuleText, &ev.ICSBlob,
@@ -592,7 +675,7 @@ func (s *Store) ListEventsForExpansion(calendarIDs []string) ([]Event, error) {
 		args[i] = id
 	}
 	q := fmt.Sprintf(`
-		SELECT id, calendar_id, uid, etag, href,
+		SELECT id, calendar_id, uid, etag, href, provider_event_id,
 		       summary, COALESCE(description, ''), COALESCE(location, ''),
 		       dtstart_unix, dtend_unix, is_all_day, COALESCE(tz_name, ''),
 		       COALESCE(rrule_text, ''), ics_blob
@@ -610,7 +693,7 @@ func (s *Store) ListEventsForExpansion(calendarIDs []string) ([]Event, error) {
 		var ev Event
 		var isAllDay int
 		if err := rows.Scan(
-			&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Href,
+			&ev.ID, &ev.CalendarID, &ev.UID, &ev.ETag, &ev.Href, &ev.ProviderEventID,
 			&ev.Summary, &ev.Description, &ev.Location,
 			&ev.DTStartUnix, &ev.DTEndUnix, &isAllDay, &ev.TZName,
 			&ev.RRuleText, &ev.ICSBlob,

@@ -736,6 +736,7 @@ export namespace backend {
 	    uid: string;
 	    etag: string;
 	    href: string;
+	    providerEventId?: string;
 	    summary: string;
 	    description?: string;
 	    location?: string;
@@ -756,6 +757,7 @@ export namespace backend {
 	        this.uid = source["uid"];
 	        this.etag = source["etag"];
 	        this.href = source["href"];
+	        this.providerEventId = source["providerEventId"];
 	        this.summary = source["summary"];
 	        this.description = source["description"];
 	        this.location = source["location"];
@@ -846,6 +848,7 @@ export namespace backend {
 	    uid: string;
 	    etag: string;
 	    href: string;
+	    providerEventId?: string;
 	    summary: string;
 	    description?: string;
 	    location?: string;
@@ -869,6 +872,7 @@ export namespace backend {
 	        this.uid = source["uid"];
 	        this.etag = source["etag"];
 	        this.href = source["href"];
+	        this.providerEventId = source["providerEventId"];
 	        this.summary = source["summary"];
 	        this.description = source["description"];
 	        this.location = source["location"];
@@ -930,6 +934,76 @@ export namespace backend {
 		    return a;
 		}
 	}
+	export class GoogleCalendarChoice {
+	    id: string;
+	    summary: string;
+	    primary: boolean;
+	    accessRole: string;
+	    writable: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new GoogleCalendarChoice(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.summary = source["summary"];
+	        this.primary = source["primary"];
+	        this.accessRole = source["accessRole"];
+	        this.writable = source["writable"];
+	    }
+	}
+	export class GoogleCalendarSelection {
+	    id: string;
+	    displayName: string;
+	    color?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new GoogleCalendarSelection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.displayName = source["displayName"];
+	        this.color = source["color"];
+	    }
+	}
+	export class MicrosoftCalendarChoice {
+	    id: string;
+	    name: string;
+	    isDefaultCalendar: boolean;
+	    writable: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MicrosoftCalendarChoice(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.isDefaultCalendar = source["isDefaultCalendar"];
+	        this.writable = source["writable"];
+	    }
+	}
+	export class MicrosoftCalendarSelection {
+	    id: string;
+	    displayName: string;
+	    color?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MicrosoftCalendarSelection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.displayName = source["displayName"];
+	        this.color = source["color"];
+	    }
+	}
 	
 	
 	export class ResizedContactPhoto {
@@ -958,6 +1032,7 @@ export namespace backend {
 	    lastErrorAt?: number;
 	    accountId?: string;
 	    enabled: boolean;
+	    writable: boolean;
 	    createdAt: number;
 	
 	    static createFrom(source: any = {}) {
@@ -977,6 +1052,7 @@ export namespace backend {
 	        this.lastErrorAt = source["lastErrorAt"];
 	        this.accountId = source["accountId"];
 	        this.enabled = source["enabled"];
+	        this.writable = source["writable"];
 	        this.createdAt = source["createdAt"];
 	    }
 	}

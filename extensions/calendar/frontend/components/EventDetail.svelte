@@ -182,11 +182,14 @@
     return new Date(Date.UTC(y, mo, d, Number(m[5]), Number(m[6]), Number(m[7])))
   }
 
-  // --- Edit / Delete (local events only) -------------------------------------
+  // --- Edit / Delete (writable sources only) ---------------------------------
+  // Local sources are always writable. CalDAV flips to writable after first
+  // sync (or at add time for new sources). Google/Microsoft providers in
+  // future chunks set the flag per accessRole / canEdit.
 
-  const isLocal = $derived.by(() => {
+  const isWritable = $derived.by(() => {
     if (!event) return false
-    return calendarSources.sourceTypeOf(event.calendarId) === 'local'
+    return calendarSources.isWritable(event.calendarId)
   })
 
   const isRecurring = $derived(!!event?.rruleText && event.rruleText !== '')
@@ -294,7 +297,7 @@
         </span>
       </div>
 
-      {#if isLocal}
+      {#if isWritable}
         <div class="flex items-center gap-2 mt-3">
           <Button variant="outline" size="sm" onclick={startEdit}>
             <Icon icon="mdi:pencil" class="w-3.5 h-3.5 mr-1" />

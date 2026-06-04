@@ -13,6 +13,8 @@
   import ConfirmDialog from '$lib/components/kit/ConfirmDialog.svelte'
   import ColorPicker from '$lib/components/kit/ColorPicker.svelte'
   import AddLocalCalendarDialog from './AddLocalCalendarDialog.svelte'
+  import AddGoogleCalendarDialog from './AddGoogleCalendarDialog.svelte'
+  import AddMicrosoftCalendarDialog from './AddMicrosoftCalendarDialog.svelte'
   import Icon from '@iconify/svelte'
   import { toasts } from '$lib/stores/toast'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
@@ -34,6 +36,8 @@
   // Add-source dialog opens from inside this one.
   let showAddSource = $state(false)
   let showAddLocalCalendar = $state(false)
+  let showAddGoogle = $state(false)
+  let showAddMicrosoft = $state(false)
   let deleteCalendarTarget = $state<{ id: string; displayName: string } | null>(null)
   let deletingCalendar = $state(false)
 
@@ -304,15 +308,32 @@
           </div>
         {/each}
 
-        <Button
-          variant="outline"
-          size="sm"
-          class="mt-2"
-          onclick={() => { showAddSource = true }}
-        >
-          <Icon icon="mdi:plus" class="w-4 h-4 mr-1" />
-          {$_('calendar.sidebar.addSource')}
-        </Button>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => { showAddSource = true }}
+          >
+            <Icon icon="mdi:plus" class="w-4 h-4 mr-1" />
+            {$_('calendar.sidebar.addSource')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => { showAddGoogle = true }}
+          >
+            <Icon icon="mdi:google" class="w-4 h-4 mr-1" />
+            {$_('calendar.settings.addGoogle')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onclick={() => { showAddMicrosoft = true }}
+          >
+            <Icon icon="mdi:microsoft-outlook" class="w-4 h-4 mr-1" />
+            {$_('calendar.settings.addOutlook')}
+          </Button>
+        </div>
       </section>
 
       <!-- Alarms section (informational) -->
@@ -347,6 +368,10 @@
 <AddCalDAVSourceDialog bind:open={showAddSource} onClose={() => { void calendarSources.load() }} />
 
 <AddLocalCalendarDialog bind:open={showAddLocalCalendar} onCreated={() => { void calendarSources.load() }} />
+
+<AddGoogleCalendarDialog bind:open={showAddGoogle} onClose={() => { void calendarSources.load() }} />
+
+<AddMicrosoftCalendarDialog bind:open={showAddMicrosoft} onClose={() => { void calendarSources.load() }} />
 
 <ConfirmDialog
   open={deleteTarget !== null}

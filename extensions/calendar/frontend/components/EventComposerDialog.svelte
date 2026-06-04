@@ -1,9 +1,11 @@
 <script lang="ts">
-  // EventComposerDialog — create + edit form for local events.
+  // EventComposerDialog — create + edit form for writable calendars.
   //
   // Two modes: 'create' (build new EventInput) and 'edit' (prefill from
   // an existing event + pass scope for recurring updates). The calendar
-  // picker only lists local-source calendars; CalDAV writes are Phase 2.
+  // picker lists every writable calendar (local + CalDAV as of Phase 2
+  // Chunk 2; Google + Microsoft in later chunks). Writability is read
+  // from Source.Writable, set per provider's CanWrite capability.
   //
   // Date/time inputs render in the user's display timezone via
   // calendarSettings.effectiveTimezone. On save, the local-tz datetime is
@@ -72,10 +74,14 @@
   let submitting = $state(false)
   let errorMessage = $state('')
 
-  const localCalendars = $derived.by(() => {
+  // Writable target calendars for create + edit. Filters by Source.Writable
+  // (set per provider's CanWrite capability) rather than by source type, so
+  // CalDAV / Google / Microsoft writable calendars appear alongside local
+  // ones automatically as each provider lands.
+  const writableCalendars = $derived.by(() => {
     const out: { id: string; name: string }[] = []
     for (const src of calendarSources.sources) {
-      if (src.type !== 'local') continue
+      if (!src.writable) continue
       for (const cal of calendarSources.calendarsBySource[src.id] || []) {
         out.push({ id: cal.id, name: cal.displayName })
       }
@@ -123,7 +129,7 @@
 
   function initCreateDefaults() {
     const tz = calendarSettings.effectiveTimezone
-    calendarId = defaultCalendarId || localCalendars[0]?.id || ''
+    calendarId = defaultCalendarId || writableCalendars[0]?.id || ''
     const ref = defaultStart ?? new Date()
     const refInTz = toZonedTime(ref, tz)
     const isDefaultNow = defaultStart === null
@@ -349,16 +355,16 @@
 
       <div>
         <Label>{$_('calendar.composer.calendarLabel')}</Label>
-        {#if localCalendars.length === 0}
+        {#if writableCalendars.length === 0}
           <p class="text-xs text-destructive mt-1">{$_('calendar.composer.noLocalCalendars')}</p>
         {/if}
-        {#if localCalendars.length > 0}
+        {#if writableCalendars.length > 0}
           <Select.Root value={calendarId} onValueChange={(v) => { if (v) calendarId = v }}>
             <Select.Trigger class="h-9">
-              {localCalendars.find(c => c.id === calendarId)?.name ?? ''}
+              {writableCalendars.find(c => c.id === calendarId)?.name ?? ''}
             </Select.Trigger>
             <Select.Content>
-              {#each localCalendars as c (c.id)}
+              {#each writableCalendars as c (c.id)}
                 <Select.Item value={c.id} label={c.name} />
               {/each}
             </Select.Content>
@@ -492,7 +498,7 @@
       <Button variant="ghost" onclick={close} disabled={submitting}>
         {$_('calendar.common.cancel')}
       </Button>
-      <Button onclick={handleSave} disabled={submitting || localCalendars.length === 0}>
+      <Button onclick={handleSave} disabled={submitting || writableCalendars.length === 0}>
         {#if submitting}<Icon icon="mdi:loading" class="w-4 h-4 mr-1 animate-spin" />{/if}
         {$_('calendar.common.save')}
       </Button>

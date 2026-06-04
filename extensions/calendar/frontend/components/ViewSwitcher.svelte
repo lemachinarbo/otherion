@@ -42,11 +42,13 @@
   let syncing = $state(false)
   let showComposer = $state(false)
 
-  // Visible only when at least one local calendar exists. CalDAV writes
-  // require Phase 2 OAuth + PUT logic.
-  const hasLocalCalendar = $derived.by(() => {
+  // "+ Event" button is visible when at least one writable calendar exists.
+  // Local + CalDAV (post-Chunk 2) both qualify; Google + Microsoft join in
+  // Chunks 3-4 with the same flag derived from the provider's accessRole /
+  // canEdit at sync time.
+  const hasWritableCalendar = $derived.by(() => {
     for (const src of calendarSources.sources) {
-      if (src.type === 'local' && (calendarSources.calendarsBySource[src.id] || []).length > 0) {
+      if (src.writable && (calendarSources.calendarsBySource[src.id] || []).length > 0) {
         return true
       }
     }
@@ -125,7 +127,7 @@
     <div class="hidden sm:inline">
       <TimezonePicker />
     </div>
-    {#if hasLocalCalendar}
+    {#if hasWritableCalendar}
       <Button
         size="sm"
         variant="outline"

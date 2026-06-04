@@ -128,8 +128,10 @@ func (b *CalendarBridge) ensureInit() error {
 		}
 
 		secrets := b.deps.Core.Storage().Secrets(extensionID)
-		b.api = NewAPI(store, secrets)
-		b.syncer = NewSyncer(store, secrets, b.deps.Core.Events(), b.deps.SettingsStore)
+		auth := b.deps.Core.Auth()
+		queue := NewPendingQueue(store, secrets, auth, b.deps.Core.Events())
+		b.api = NewAPI(store, secrets, auth, queue)
+		b.syncer = NewSyncer(store, secrets, b.deps.Core.Events(), b.deps.SettingsStore, auth, queue)
 		b.syncer.Start()
 		b.alarms = NewAlarmScheduler(store, b.deps.Core.Notifications(), b.deps.Core.Events(), b.deps.Core.Log())
 		b.alarms.Start(context.Background())
@@ -523,4 +525,82 @@ func listAllSourceIDs(a *API) []string {
 		out = append(out, s.ID)
 	}
 	return out
+}
+
+// --- Google Calendar add-source flow (Phase 2 Chunk 3) -----------------------
+
+// Calendar_ListGoogleCalendarsForAccount drives Google's /calendarList API
+// using the account's OAuth grant (via coreapi.Auth). Returns the user's
+// calendars so the frontend picker can show a checkbox list.
+//
+// If the account hasn't granted the calendar scope yet, the broker returns
+// *coreapi.ErrAdditionalConsentRequired. The frontend should detect that
+// error string and route the user through the host's incremental-consent
+// flow (Chunk 6 polishes this; Chunk 3 surfaces the error as-is).
+func (b *CalendarBridge) Calendar_ListGoogleCalendarsForAccount(accountID string) ([]GoogleCalendarChoice, error) {
+	if !b.gateEnabled() {
+		return nil, errors.New("calendar: extension disabled")
+	}
+	if err := b.ensureInit(); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return b.api.ListGoogleCalendarsForAccount(ctx, accountID)
+}
+
+// Calendar_AddGoogleSource persists a Google-backed source + the user's
+// chosen calendars, then triggers an initial sync. Returns the new source
+// ID. Mirrors Calendar_AddCalDAVSource's post-add wiring (hooks the
+// syncer's per-source ticker + fires an immediate background sync).
+func (b *CalendarBridge) Calendar_AddGoogleSource(accountID, name string, selections []GoogleCalendarSelection) (string, error) {
+	if !b.gateEnabled() {
+		return "", errors.New("calendar: extension disabled")
+	}
+	if err := b.ensureInit(); err != nil {
+		return "", err
+	}
+	sourceID, err := b.api.AddGoogleSource(accountID, name, selections)
+	if err != nil {
+		return "", err
+	}
+	b.syncer.AddSource(sourceID, 15)
+	return sourceID, nil
+}
+
+// --- Microsoft Graph add-source flow (Phase 2 Chunk 4) -----------------------
+
+// Calendar_ListMicrosoftCalendarsForAccount drives Microsoft Graph's
+// /me/calendars endpoint using the account's OAuth grant. Mirrors the
+// Google sibling. Surfaces *coreapi.ErrAdditionalConsentRequired when the
+// Calendars.ReadWrite scope hasn't been granted; the frontend renders a
+// "grant calendar access" banner.
+func (b *CalendarBridge) Calendar_ListMicrosoftCalendarsForAccount(accountID string) ([]MicrosoftCalendarChoice, error) {
+	if !b.gateEnabled() {
+		return nil, errors.New("calendar: extension disabled")
+	}
+	if err := b.ensureInit(); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return b.api.ListMicrosoftCalendarsForAccount(ctx, accountID)
+}
+
+// Calendar_AddMicrosoftSource persists a Microsoft-backed source + the
+// user's chosen calendars, then triggers an initial sync. Mirrors
+// Calendar_AddGoogleSource 1-for-1.
+func (b *CalendarBridge) Calendar_AddMicrosoftSource(accountID, name string, selections []MicrosoftCalendarSelection) (string, error) {
+	if !b.gateEnabled() {
+		return "", errors.New("calendar: extension disabled")
+	}
+	if err := b.ensureInit(); err != nil {
+		return "", err
+	}
+	sourceID, err := b.api.AddMicrosoftSource(accountID, name, selections)
+	if err != nil {
+		return "", err
+	}
+	b.syncer.AddSource(sourceID, 15)
+	return sourceID, nil
 }

@@ -26,6 +26,7 @@ package backend
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -79,22 +80,26 @@ const (
 	EditScopeAll           EditScope = "all"
 )
 
-// CreateEvent serializes the input as a VEVENT, inserts the events row
-// plus any VALARM-driven event_alarms rows, and returns the new event ID.
-// The bridge calls AlarmScheduler.Reevaluate() after.
+// CreateEvent serializes the input as a VEVENT, pushes to the remote (no-op
+// for local), then inserts the events row plus any VALARM-driven event_alarms
+// rows. The bridge calls AlarmScheduler.Reevaluate() after.
+//
+// Push-first ordering: if the remote PUT fails (network error, 412 conflict),
+// nothing is persisted locally — user retries. Chunk 5's offline queue will
+// invert this to commit-locally + queue-push-for-retry.
 func (a *API) CreateEvent(in EventInput) (string, error) {
 	if err := validateInput(in); err != nil {
 		return "", err
 	}
-	_, src, err := a.lookupCalendarAndSource(in.CalendarID)
+	cal, src, err := a.lookupCalendarAndSource(in.CalendarID)
 	if err != nil {
 		return "", err
 	}
-	if src.Type != SourceTypeLocal {
-		return "", fmt.Errorf("calendar: event CRUD is only supported on local calendars (got type=%q)", src.Type)
+	if !src.Writable {
+		return "", ErrNotWritable
 	}
 
-	uid := uuid.NewString() + "@aerion-local"
+	uid := uuid.NewString() + "@aerion-" + src.Type
 	icsBlob, err := serializeVEVENT(uid, in)
 	if err != nil {
 		return "", fmt.Errorf("serialize event: %w", err)
@@ -112,6 +117,49 @@ func (a *API) CreateEvent(in EventInput) (string, error) {
 		IsAllDay:    in.IsAllDay,
 		RRuleText:   rruleText(in.Recurrence),
 		ICSBlob:     icsBlob,
+		// ETag + Href empty: caldavProvider.PushEvent synthesizes the href
+		// from cal.URL + uid, and captures the server's returned ETag.
+	}
+
+	provider := ProviderForSource(*src, ProviderDeps{Store: a.store, Secrets: a.secrets, Auth: a.auth})
+	pushCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := provider.PushEvent(pushCtx, *src, *cal, ev)
+	if err == nil {
+		ev.ETag = result.ETag
+		ev.ProviderEventID = result.ProviderEventID
+		if src.Type == SourceTypeCalDAV {
+			ev.Href = joinHref(cal.URL, uid+".ics")
+		}
+	}
+	if err != nil {
+		// Transport-level failure → soft-commit + enqueue. Drain
+		// (triggered by next sync / system:network-online) replays the
+		// push and fills in ETag + ProviderEventID. Any other error
+		// (HTTP 4xx/5xx, ErrConflict, ErrScopeNotSupported) surfaces
+		// immediately.
+		if !errors.Is(err, ErrTransport) || a.queue == nil {
+			return "", fmt.Errorf("push event to remote: %w", err)
+		}
+		if _, qerr := a.queue.Enqueue(PendingOp{
+			SourceID:    src.ID,
+			CalendarID:  cal.ID,
+			EventID:     ev.ID,
+			Op:          PendingOpCreate,
+			CalendarURL: cal.URL,
+			UID:         ev.UID,
+			Summary:     ev.Summary,
+			Description: ev.Description,
+			Location:    ev.Location,
+			DTStartUnix: ev.DTStartUnix,
+			DTEndUnix:   ev.DTEndUnix,
+			IsAllDay:    ev.IsAllDay,
+			TZName:      ev.TZName,
+			RRuleText:   ev.RRuleText,
+			ICSBlob:     ev.ICSBlob,
+		}); qerr != nil {
+			return "", fmt.Errorf("queue offline write: %w", qerr)
+		}
 	}
 
 	err = a.store.WithTx(func(tx *sql.Tx) error {
@@ -127,6 +175,12 @@ func (a *API) CreateEvent(in EventInput) (string, error) {
 }
 
 // UpdateEvent dispatches on scope. Non-recurring events ignore scope.
+//
+// CalDAV recurring + scope=this / this-and-future returns ErrScopeNotSupported
+// in Chunk 2 — the VCALENDAR-composition helper (master + overrides → combined
+// PUT payload) lands in a follow-up. CalDAV scope=All works because PUTting a
+// new master-only VCALENDAR drops server-side overrides, matching Phase 3
+// local semantics.
 func (a *API) UpdateEvent(in EventUpdateInput, scope EditScope) error {
 	if in.EventID == "" {
 		return errors.New("calendar: event ID required")
@@ -141,29 +195,225 @@ func (a *API) UpdateEvent(in EventUpdateInput, scope EditScope) error {
 	if master == nil {
 		return errors.New("calendar: event not found")
 	}
-	_, src, err := a.lookupCalendarAndSource(master.CalendarID)
+	cal, src, err := a.lookupCalendarAndSource(master.CalendarID)
 	if err != nil {
 		return err
 	}
-	if src.Type != SourceTypeLocal {
-		return fmt.Errorf("calendar: event CRUD is only supported on local calendars")
+	if !src.Writable {
+		return ErrNotWritable
 	}
 
-	// Non-recurring or scope=All → straight replace.
+	// Non-recurring or scope=All → straight replace + remote PUT.
 	if master.RRuleText == "" || scope == EditScopeAll || scope == "" {
-		return a.updateAll(*master, in.EventInput)
+		return a.updateAllAndPush(*src, *cal, *master, in.EventInput)
 	}
 
 	switch scope {
 	case EditScopeThis:
-		return a.updateThis(*master, in.EventInput)
+		return a.updateInstance(*src, *cal, *master, in.EventInput, InstanceOpUpdate, EditScopeThis)
 	case EditScopeThisAndFuture:
-		return a.updateThisAndFuture(*master, in.EventInput)
+		return a.updateInstance(*src, *cal, *master, in.EventInput, InstanceOpUpdate, EditScopeThisAndFuture)
 	}
 	return fmt.Errorf("calendar: unknown edit scope %q", scope)
 }
 
+// updateInstance handles scope=this and scope=this-and-future updates for
+// any writable source. Push-first ordering: provider.PushInstance commits
+// the remote change; then we persist the local-side state (override row
+// for scope=this, new events row + updated master for scope=this-and-future)
+// with the returned identifiers.
+//
+// localProvider's PushInstance is a no-op, so this same code path drives
+// local scope=this / scope=this-and-future too — replacing the previous
+// updateThis / updateThisAndFuture local-only helpers.
+func (a *API) updateInstance(src Source, cal Calendar, master Event, in EventInput, kind InstanceOpKind, op EditScope) error {
+	provider := ProviderForSource(src, ProviderDeps{Store: a.store, Secrets: a.secrets, Auth: a.auth})
+	pushCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := provider.PushInstance(pushCtx, src, cal, PushInstancePayload{
+		Master:           master,
+		InstanceTimeUnix: in.DTStartUnix,
+		Op:               op,
+		Kind:             kind,
+		In:               in,
+	})
+	if err != nil {
+		return fmt.Errorf("push instance to remote: %w", err)
+	}
+
+	switch {
+	case op == EditScopeThis && kind == InstanceOpUpdate:
+		return a.persistThisUpdate(master, in, result)
+	case op == EditScopeThis && kind == InstanceOpDelete:
+		return a.persistThisDelete(master, in.DTStartUnix, result)
+	case op == EditScopeThisAndFuture && kind == InstanceOpUpdate:
+		return a.persistThisAndFutureUpdateLocally(master, in, result)
+	case op == EditScopeThisAndFuture && kind == InstanceOpDelete:
+		return a.persistThisAndFutureDeleteLocally(master, in.DTStartUnix, result)
+	}
+	return fmt.Errorf("calendar: unsupported scope/kind combo %q/%q", op, kind)
+}
+
+// persistThisUpdate writes the override row + updates the master's ETag
+// when the provider returned one (CalDAV — the master's resource was
+// rewritten to embed the override).
+func (a *API) persistThisUpdate(master Event, in EventInput, result PushInstanceResult) error {
+	overrideBlob, err := serializeVEVENTWithRecurrenceID(master.UID, in)
+	if err != nil {
+		return fmt.Errorf("serialize override: %w", err)
+	}
+	return a.store.WithTx(func(tx *sql.Tx) error {
+		if err := a.store.UpsertOverrideTx(tx, master.ID, in.DTStartUnix, overrideBlob); err != nil {
+			return err
+		}
+		if result.MasterNewETag != "" {
+			if _, err := tx.Exec(
+				`UPDATE events SET etag = ? WHERE id = ?`,
+				result.MasterNewETag, master.ID,
+			); err != nil {
+				return fmt.Errorf("update master etag: %w", err)
+			}
+		}
+		return a.extractAndUpsertAlarmsTx(tx, master)
+	})
+}
+
+// persistThisDelete adds EXDATE to the master + drops any existing
+// matching override row.
+func (a *API) persistThisDelete(master Event, instanceUnix int64, result PushInstanceResult) error {
+	updatedICS, err := addEXDATE(master.ICSBlob, instanceUnix)
+	if err != nil {
+		return err
+	}
+	updated := master
+	updated.ICSBlob = updatedICS
+	if result.MasterNewETag != "" {
+		updated.ETag = result.MasterNewETag
+	}
+	return a.store.WithTx(func(tx *sql.Tx) error {
+		if err := a.store.UpsertEventTx(tx, updated); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(
+			`DELETE FROM event_recurrence_overrides WHERE event_id = ? AND recurrence_id_unix = ?`,
+			master.ID, instanceUnix,
+		); err != nil {
+			return err
+		}
+		return a.extractAndUpsertAlarmsTx(tx, updated)
+	})
+}
+
+// persistThisAndFutureUpdateLocally clamps the master locally + inserts
+// a new events row for the future series. NewSeries identifiers come from
+// the provider (or are generated locally for local sources via the same
+// pattern as the legacy updateThisAndFuture).
+func (a *API) persistThisAndFutureUpdateLocally(master Event, in EventInput, result PushInstanceResult) error {
+	splitUnix := in.DTStartUnix
+
+	// 1. Clamp master's RRULE locally.
+	clampedRRULE := clampRRuleUntil(master.RRuleText, splitUnix-1)
+	clampedICS, err := reserializeMasterICS(master, clampedRRULE)
+	if err != nil {
+		return err
+	}
+	clampedMaster := master
+	clampedMaster.RRuleText = clampedRRULE
+	clampedMaster.ICSBlob = clampedICS
+	if result.MasterNewETag != "" {
+		clampedMaster.ETag = result.MasterNewETag
+	}
+
+	// 2. New master for the future series — UID + identifiers from the
+	//    provider's NewSeries (non-nil for any non-local source), or
+	//    locally-generated for local.
+	var newUID string
+	var newETag string
+	var newHref string
+	var newProviderEventID string
+	if result.NewSeries != nil {
+		newUID = result.NewSeries.UID
+		newETag = result.NewSeries.ETag
+		newHref = result.NewSeries.Href
+		newProviderEventID = result.NewSeries.ProviderEventID
+	}
+	if newUID == "" {
+		newUID = uuid.NewString() + "@aerion-local"
+	}
+	newICS, err := serializeVEVENT(newUID, in)
+	if err != nil {
+		return err
+	}
+	newMaster := Event{
+		ID:              uuid.NewString(),
+		CalendarID:      master.CalendarID,
+		UID:             newUID,
+		ETag:            newETag,
+		Href:            newHref,
+		ProviderEventID: newProviderEventID,
+		Summary:         in.Summary,
+		Description:     in.Description,
+		Location:        in.Location,
+		DTStartUnix:     in.DTStartUnix,
+		DTEndUnix:       in.DTEndUnix,
+		IsAllDay:        in.IsAllDay,
+		RRuleText:       rruleText(in.Recurrence),
+		ICSBlob:         newICS,
+	}
+
+	return a.store.WithTx(func(tx *sql.Tx) error {
+		if err := a.store.UpsertEventTx(tx, clampedMaster); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(
+			`DELETE FROM event_recurrence_overrides WHERE event_id = ? AND recurrence_id_unix >= ?`,
+			master.ID, splitUnix,
+		); err != nil {
+			return err
+		}
+		if err := a.store.UpsertEventTx(tx, newMaster); err != nil {
+			return err
+		}
+		if err := a.extractAndUpsertAlarmsTx(tx, clampedMaster); err != nil {
+			return err
+		}
+		return a.extractAndUpsertAlarmsTx(tx, newMaster)
+	})
+}
+
+// persistThisAndFutureDeleteLocally clamps the master locally + drops
+// future overrides. No new series row.
+func (a *API) persistThisAndFutureDeleteLocally(master Event, splitUnix int64, result PushInstanceResult) error {
+	clampedRRULE := clampRRuleUntil(master.RRuleText, splitUnix-1)
+	clampedICS, err := reserializeMasterICS(master, clampedRRULE)
+	if err != nil {
+		return err
+	}
+	updated := master
+	updated.RRuleText = clampedRRULE
+	updated.ICSBlob = clampedICS
+	if result.MasterNewETag != "" {
+		updated.ETag = result.MasterNewETag
+	}
+	return a.store.WithTx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(
+			`DELETE FROM event_recurrence_overrides WHERE event_id = ? AND recurrence_id_unix >= ?`,
+			master.ID, splitUnix,
+		); err != nil {
+			return err
+		}
+		if err := a.store.UpsertEventTx(tx, updated); err != nil {
+			return err
+		}
+		return a.extractAndUpsertAlarmsTx(tx, updated)
+	})
+}
+
 // DeleteEvent removes an event with scope semantics symmetric to UpdateEvent.
+//
+// CalDAV recurring + scope=this / this-and-future returns ErrScopeNotSupported
+// (same reasoning as UpdateEvent). CalDAV scope=All issues an HTTP DELETE with
+// If-Match for optimistic concurrency, then CASCADEs the local rows.
 func (a *API) DeleteEvent(eventID string, scope EditScope) error {
 	if eventID == "" {
 		return errors.New("calendar: event ID required")
@@ -175,15 +425,43 @@ func (a *API) DeleteEvent(eventID string, scope EditScope) error {
 	if master == nil {
 		return nil // idempotent
 	}
-	_, src, err := a.lookupCalendarAndSource(master.CalendarID)
+	cal, src, err := a.lookupCalendarAndSource(master.CalendarID)
 	if err != nil {
 		return err
 	}
-	if src.Type != SourceTypeLocal {
-		return fmt.Errorf("calendar: event CRUD is only supported on local calendars")
+	if !src.Writable {
+		return ErrNotWritable
 	}
 
+	// Non-recurring or scope=All → delete remote first, then cascade local.
 	if master.RRuleText == "" || scope == EditScopeAll || scope == "" {
+		provider := ProviderForSource(*src, ProviderDeps{Store: a.store, Secrets: a.secrets, Auth: a.auth})
+		delCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		derr := provider.DeleteRemote(delCtx, *src, *cal, *master)
+		if derr != nil {
+			if !errors.Is(derr, ErrTransport) || a.queue == nil {
+				return fmt.Errorf("delete event on remote: %w", derr)
+			}
+			// Soft-commit delete: queue the remote DELETE so Drain
+			// replays when connectivity returns. Payload carries enough
+			// to reach the resource (ProviderEventID for Google/Microsoft,
+			// Href for CalDAV) even after the local row is gone.
+			if _, qerr := a.queue.Enqueue(PendingOp{
+				SourceID:        src.ID,
+				CalendarID:      cal.ID,
+				EventID:         master.ID,
+				Op:              PendingOpDelete,
+				Scope:           EditScopeAll,
+				CalendarURL:     cal.URL,
+				UID:             master.UID,
+				ETag:            master.ETag,
+				Href:            master.Href,
+				ProviderEventID: master.ProviderEventID,
+			}); qerr != nil {
+				return fmt.Errorf("queue offline delete: %w", qerr)
+			}
+		}
 		// CASCADE removes overrides + alarms.
 		return a.store.WithTx(func(tx *sql.Tx) error {
 			return a.store.DeleteEventByUIDTx(tx, master.CalendarID, master.UID)
@@ -191,19 +469,105 @@ func (a *API) DeleteEvent(eventID string, scope EditScope) error {
 	}
 
 	// For recurring "this" / "this-and-future", the caller's intent is
-	// based on a specific instance. The frontend passes the original
-	// instance start via DTStartUnix on the input (we read master.DTStart
-	// here as the placeholder for now — the bridge layer can override
-	// when a specific instance UID is wired through in a follow-up).
+	// based on a specific instance. The bridge passes the original
+	// instance start via master.DTStartUnix as a placeholder; a future
+	// bridge update can thread a specific instance time through when the
+	// frontend selects an instance other than the master's first.
 	splitUnix := master.DTStartUnix
+
+	// Push delete to remote first via PushInstance, then persist locally.
+	// Symmetric with UpdateEvent's scope=this / scope=this-and-future
+	// branches.
+	deleteIn := EventInput{
+		Summary:     master.Summary,
+		Description: master.Description,
+		Location:    master.Location,
+		DTStartUnix: splitUnix,
+		DTEndUnix:   master.DTEndUnix,
+		IsAllDay:    master.IsAllDay,
+	}
 
 	switch scope {
 	case EditScopeThis:
-		return a.deleteThis(*master, splitUnix)
+		return a.updateInstance(*src, *cal, *master, deleteIn, InstanceOpDelete, EditScopeThis)
 	case EditScopeThisAndFuture:
-		return a.deleteThisAndFuture(*master, splitUnix)
+		return a.updateInstance(*src, *cal, *master, deleteIn, InstanceOpDelete, EditScopeThisAndFuture)
 	}
 	return fmt.Errorf("calendar: unknown edit scope %q", scope)
+}
+
+// updateAllAndPush builds the new event, pushes to remote (no-op for local),
+// then persists. Used for non-recurring events (any scope) and recurring
+// events with scope=All (drops overrides — matches Phase 3 local semantics
+// and CalDAV's whole-VCALENDAR-replacement semantics).
+func (a *API) updateAllAndPush(src Source, cal Calendar, master Event, in EventInput) error {
+	icsBlob, err := serializeVEVENT(master.UID, in)
+	if err != nil {
+		return fmt.Errorf("serialize event: %w", err)
+	}
+	ev := master // preserve ID, UID, CalendarID, Href; ETag flows to PushEvent as If-Match
+	ev.Summary = in.Summary
+	ev.Description = in.Description
+	ev.Location = in.Location
+	ev.DTStartUnix = in.DTStartUnix
+	ev.DTEndUnix = in.DTEndUnix
+	ev.IsAllDay = in.IsAllDay
+	ev.RRuleText = rruleText(in.Recurrence)
+	ev.ICSBlob = icsBlob
+
+	provider := ProviderForSource(src, ProviderDeps{Store: a.store, Secrets: a.secrets, Auth: a.auth})
+	pushCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := provider.PushEvent(pushCtx, src, cal, ev)
+	if err == nil {
+		ev.ETag = result.ETag
+		if result.ProviderEventID != "" {
+			ev.ProviderEventID = result.ProviderEventID
+		}
+	}
+	if err != nil {
+		if !errors.Is(err, ErrTransport) || a.queue == nil {
+			return fmt.Errorf("push event to remote: %w", err)
+		}
+		// Soft-commit update: queued row carries the master's old ETag +
+		// ProviderEventID + Href so Drain can replay with If-Match.
+		if _, qerr := a.queue.Enqueue(PendingOp{
+			SourceID:        src.ID,
+			CalendarID:      cal.ID,
+			EventID:         ev.ID,
+			Op:              PendingOpUpdate,
+			Scope:           EditScopeAll,
+			CalendarURL:     cal.URL,
+			UID:             ev.UID,
+			ETag:            master.ETag,
+			Href:            ev.Href,
+			ProviderEventID: ev.ProviderEventID,
+			Summary:         ev.Summary,
+			Description:     ev.Description,
+			Location:        ev.Location,
+			DTStartUnix:     ev.DTStartUnix,
+			DTEndUnix:       ev.DTEndUnix,
+			IsAllDay:        ev.IsAllDay,
+			TZName:          ev.TZName,
+			RRuleText:       ev.RRuleText,
+			ICSBlob:         ev.ICSBlob,
+		}); qerr != nil {
+			return fmt.Errorf("queue offline write: %w", qerr)
+		}
+	}
+
+	return a.store.WithTx(func(tx *sql.Tx) error {
+		if err := a.store.UpsertEventTx(tx, ev); err != nil {
+			return err
+		}
+		// Drop ALL overrides — they were attached to the old RRULE shape
+		// and may not map cleanly to the new occurrence set.
+		if _, err := tx.Exec(
+			`DELETE FROM event_recurrence_overrides WHERE event_id = ?`, ev.ID); err != nil {
+			return err
+		}
+		return a.extractAndUpsertAlarmsTx(tx, ev)
+	})
 }
 
 // --- Internal helpers ---------------------------------------------------------
@@ -369,142 +733,6 @@ func (a *API) extractAndUpsertAlarmsTx(tx *sql.Tx, ev Event) error {
 		}
 	}
 	return nil
-}
-
-// --- Scope-aware update branches ---------------------------------------------
-
-func (a *API) updateAll(master Event, in EventInput) error {
-	icsBlob, err := serializeVEVENT(master.UID, in)
-	if err != nil {
-		return fmt.Errorf("serialize event: %w", err)
-	}
-	ev := master
-	ev.Summary = in.Summary
-	ev.Description = in.Description
-	ev.Location = in.Location
-	ev.DTStartUnix = in.DTStartUnix
-	ev.DTEndUnix = in.DTEndUnix
-	ev.IsAllDay = in.IsAllDay
-	ev.RRuleText = rruleText(in.Recurrence)
-	ev.ICSBlob = icsBlob
-
-	return a.store.WithTx(func(tx *sql.Tx) error {
-		if err := a.store.UpsertEventTx(tx, ev); err != nil {
-			return err
-		}
-		// Drop ALL overrides — they were attached to the old RRULE shape
-		// and may not map cleanly to the new occurrence set. Users can
-		// re-add per-instance overrides if needed.
-		if _, err := tx.Exec(
-			`DELETE FROM event_recurrence_overrides WHERE event_id = ?`, ev.ID); err != nil {
-			return err
-		}
-		return a.extractAndUpsertAlarmsTx(tx, ev)
-	})
-}
-
-func (a *API) updateThis(master Event, in EventInput) error {
-	icsBlob, err := serializeVEVENTWithRecurrenceID(master.UID, in)
-	if err != nil {
-		return fmt.Errorf("serialize override: %w", err)
-	}
-	return a.store.WithTx(func(tx *sql.Tx) error {
-		return a.store.UpsertOverrideTx(tx, master.ID, in.DTStartUnix, icsBlob)
-	})
-}
-
-func (a *API) updateThisAndFuture(master Event, in EventInput) error {
-	splitUnix := in.DTStartUnix
-
-	// 1. Clamp master's RRULE with UNTIL = splitUnix - 1s.
-	clampedRRULE := clampRRuleUntil(master.RRuleText, splitUnix-1)
-	clampedICS, err := reserializeMasterICS(master, clampedRRULE)
-	if err != nil {
-		return err
-	}
-	clampedMaster := master
-	clampedMaster.RRuleText = clampedRRULE
-	clampedMaster.ICSBlob = clampedICS
-
-	// 2. Build the new master starting from splitUnix with input fields.
-	newUID := uuid.NewString() + "@aerion-local"
-	newICS, err := serializeVEVENT(newUID, in)
-	if err != nil {
-		return err
-	}
-	newMaster := Event{
-		ID:          uuid.NewString(),
-		CalendarID:  master.CalendarID,
-		UID:         newUID,
-		Summary:     in.Summary,
-		Description: in.Description,
-		Location:    in.Location,
-		DTStartUnix: in.DTStartUnix,
-		DTEndUnix:   in.DTEndUnix,
-		IsAllDay:    in.IsAllDay,
-		RRuleText:   rruleText(in.Recurrence),
-		ICSBlob:     newICS,
-	}
-
-	return a.store.WithTx(func(tx *sql.Tx) error {
-		if err := a.store.UpsertEventTx(tx, clampedMaster); err != nil {
-			return err
-		}
-		// Drop future overrides — they belong to a series with the new UID.
-		if _, err := tx.Exec(
-			`DELETE FROM event_recurrence_overrides WHERE event_id = ? AND recurrence_id_unix >= ?`,
-			master.ID, splitUnix,
-		); err != nil {
-			return err
-		}
-		if err := a.store.UpsertEventTx(tx, newMaster); err != nil {
-			return err
-		}
-		if err := a.extractAndUpsertAlarmsTx(tx, clampedMaster); err != nil {
-			return err
-		}
-		return a.extractAndUpsertAlarmsTx(tx, newMaster)
-	})
-}
-
-// --- Scope-aware delete branches ---------------------------------------------
-
-func (a *API) deleteThis(master Event, instanceUnix int64) error {
-	updatedICS, err := addEXDATE(master.ICSBlob, instanceUnix)
-	if err != nil {
-		return err
-	}
-	updated := master
-	updated.ICSBlob = updatedICS
-	return a.store.WithTx(func(tx *sql.Tx) error {
-		if err := a.store.UpsertEventTx(tx, updated); err != nil {
-			return err
-		}
-		return a.extractAndUpsertAlarmsTx(tx, updated)
-	})
-}
-
-func (a *API) deleteThisAndFuture(master Event, instanceUnix int64) error {
-	clampedRRULE := clampRRuleUntil(master.RRuleText, instanceUnix-1)
-	clampedICS, err := reserializeMasterICS(master, clampedRRULE)
-	if err != nil {
-		return err
-	}
-	updated := master
-	updated.RRuleText = clampedRRULE
-	updated.ICSBlob = clampedICS
-	return a.store.WithTx(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(
-			`DELETE FROM event_recurrence_overrides WHERE event_id = ? AND recurrence_id_unix >= ?`,
-			master.ID, instanceUnix,
-		); err != nil {
-			return err
-		}
-		if err := a.store.UpsertEventTx(tx, updated); err != nil {
-			return err
-		}
-		return a.extractAndUpsertAlarmsTx(tx, updated)
-	})
 }
 
 // --- ICS manipulation helpers -------------------------------------------------

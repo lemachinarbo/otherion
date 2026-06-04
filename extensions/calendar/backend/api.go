@@ -23,14 +23,22 @@ import (
 //   - secrets: per-extension-scoped coreapi.Secrets handle (extensionID
 //     pre-bound). All credential I/O goes through this surface; the API
 //     never touches `internal/credentials` directly.
+//   - auth:    coreapi.Auth handle for OAuth-vended *http.Client. Used by
+//     the googleProvider + microsoftProvider write paths through
+//     ProviderDeps. Nil disables Google/Microsoft writes (caldav + local
+//     keep working).
 type API struct {
 	store   *Store
 	secrets coreapi.Secrets
+	auth    coreapi.Auth
+	queue   *PendingQueue
 }
 
-// NewAPI constructs the API. Both deps are required.
-func NewAPI(store *Store, secrets coreapi.Secrets) *API {
-	return &API{store: store, secrets: secrets}
+// NewAPI constructs the API. store + secrets are required; auth and queue
+// may be nil (CalDAV + local stay functional without auth; the soft-commit
+// path is skipped without a queue).
+func NewAPI(store *Store, secrets coreapi.Secrets, auth coreapi.Auth, queue *PendingQueue) *API {
+	return &API{store: store, secrets: secrets, auth: auth, queue: queue}
 }
 
 // AddCalDAVSource probes the user-entered server, persists the source +
@@ -81,6 +89,7 @@ func (a *API) AddCalDAVSource(name, serverURL, username, password string) (strin
 			Username:        username,
 			SyncIntervalMin: 15,
 			Enabled:         true,
+			Writable:        true, // trust-on-first-write per RFC 4791
 			CreatedAt:       now,
 		}); err != nil {
 			return err
@@ -194,6 +203,7 @@ func (a *API) AddLocalSource(name string) (string, error) {
 			Username:        "",
 			SyncIntervalMin: 0, // unused for local
 			Enabled:         true,
+			Writable:        true, // local sources support full CRUD
 			CreatedAt:       now,
 		})
 	})
@@ -275,4 +285,237 @@ func (a *API) AddLocalCalendar(sourceID, displayName, color string) (string, err
 		return "", fmt.Errorf("persist local calendar: %w", err)
 	}
 	return calendarID, nil
+}
+
+// --- Google Calendar source setup --------------------------------------------
+//
+// AddGoogleSource creates a calendar_sources row tied to an existing Aerion
+// mail account (AccountID identifies the Gmail account that holds the OAuth
+// grant). The frontend picker calls ListGoogleCalendarsForAccount first to
+// let the user pick which calendars to subscribe; AddGoogleSource then
+// persists that selection.
+
+// GoogleCalendarChoice is one calendar surfaced to the picker. JSON tags
+// drive the TS binding shape.
+type GoogleCalendarChoice struct {
+	ID         string `json:"id"`         // Google's calendar id (e.g. "primary" or "{hash}@group.calendar.google.com")
+	Summary    string `json:"summary"`    // user-visible name
+	Primary    bool   `json:"primary"`    // user's main calendar
+	AccessRole string `json:"accessRole"` // "owner" | "writer" | "reader" | "freeBusyReader"
+	Writable   bool   `json:"writable"`   // derived: true if accessRole is owner or writer
+}
+
+// GoogleCalendarSelection is one entry the frontend passes back to
+// AddGoogleSource — id + display name from the picker.
+type GoogleCalendarSelection struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Color       string `json:"color,omitempty"`
+}
+
+// ListGoogleCalendarsForAccount drives Google's /users/me/calendarList using
+// the account's OAuth grant. Returns the user's calendars filtered for ones
+// they can write to (Chunk 3 ships writer/owner only; read-only and
+// freeBusyReader are surfaced but the picker filters them client-side).
+func (a *API) ListGoogleCalendarsForAccount(ctx context.Context, accountID string) ([]GoogleCalendarChoice, error) {
+	if accountID == "" {
+		return nil, errors.New("calendar: account ID required")
+	}
+	if a.auth == nil {
+		return nil, errors.New("calendar: OAuth handle not configured")
+	}
+
+	// Transient Source — never persisted. Lets googleProvider.httpClient
+	// build the right OAuth request without us needing a parallel "list
+	// for unsaved source" code path.
+	transient := Source{Type: SourceTypeGoogle, AccountID: accountID}
+	p := googleProvider{store: a.store, auth: a.auth}
+
+	entries, err := p.ListGoogleCalendars(ctx, transient)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]GoogleCalendarChoice, 0, len(entries))
+	for _, e := range entries {
+		writable := e.AccessRole == "owner" || e.AccessRole == "writer"
+		out = append(out, GoogleCalendarChoice{
+			ID:         e.ID,
+			Summary:    e.Summary,
+			Primary:    e.Primary,
+			AccessRole: e.AccessRole,
+			Writable:   writable,
+		})
+	}
+	return out, nil
+}
+
+// --- Microsoft Graph Calendar source setup -----------------------------------
+//
+// Mirrors the Google flow. See ListGoogleCalendarsForAccount / AddGoogleSource
+// for the equivalent comments.
+
+// MicrosoftCalendarChoice is one calendar surfaced to the Microsoft picker.
+type MicrosoftCalendarChoice struct {
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	IsDefaultCalendar bool   `json:"isDefaultCalendar"`
+	Writable          bool   `json:"writable"` // derived from canEdit
+}
+
+// MicrosoftCalendarSelection is one entry the frontend passes back to
+// AddMicrosoftSource — id + display name from the picker.
+type MicrosoftCalendarSelection struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Color       string `json:"color,omitempty"`
+}
+
+// ListMicrosoftCalendarsForAccount drives Graph's /me/calendars using the
+// account's OAuth grant. Returns the user's calendars with writability
+// derived from canEdit.
+func (a *API) ListMicrosoftCalendarsForAccount(ctx context.Context, accountID string) ([]MicrosoftCalendarChoice, error) {
+	if accountID == "" {
+		return nil, errors.New("calendar: account ID required")
+	}
+	if a.auth == nil {
+		return nil, errors.New("calendar: OAuth handle not configured")
+	}
+
+	transient := Source{Type: SourceTypeMicrosoft, AccountID: accountID}
+	p := microsoftProvider{store: a.store, auth: a.auth}
+
+	entries, err := p.ListMicrosoftCalendars(ctx, transient)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]MicrosoftCalendarChoice, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, MicrosoftCalendarChoice{
+			ID:                e.ID,
+			Name:              e.Name,
+			IsDefaultCalendar: e.IsDefaultCalendar,
+			Writable:          e.CanEdit,
+		})
+	}
+	return out, nil
+}
+
+// AddMicrosoftSource persists a Microsoft-backed source + the user's
+// chosen calendars in one transaction. Triggers an initial sync via
+// bridge.go's Calendar_AddMicrosoftSource caller.
+func (a *API) AddMicrosoftSource(accountID, name string, selections []MicrosoftCalendarSelection) (string, error) {
+	if accountID == "" {
+		return "", errors.New("calendar: account ID required")
+	}
+	if name == "" {
+		return "", errors.New("calendar: name required")
+	}
+	if len(selections) == 0 {
+		return "", errors.New("calendar: at least one calendar must be selected")
+	}
+
+	sourceID := uuid.New().String()
+	now := time.Now().Unix()
+	err := a.store.WithTx(func(tx *sql.Tx) error {
+		if err := a.store.CreateSourceTx(tx, Source{
+			ID:              sourceID,
+			Type:            SourceTypeMicrosoft,
+			Name:            name,
+			URL:             "",
+			Username:        "",
+			SyncIntervalMin: 15,
+			AccountID:       accountID,
+			Enabled:         true,
+			Writable:        true,
+			CreatedAt:       now,
+		}); err != nil {
+			return err
+		}
+		for _, sel := range selections {
+			if sel.ID == "" {
+				return errors.New("calendar: selection missing calendar ID")
+			}
+			displayName := sel.DisplayName
+			if displayName == "" {
+				displayName = sel.ID
+			}
+			if err := a.store.CreateCalendarTx(tx, Calendar{
+				ID:          uuid.New().String(),
+				SourceID:    sourceID,
+				URL:         sel.ID,
+				DisplayName: displayName,
+				Color:       sel.Color,
+				Visible:     true,
+				CreatedAt:   now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("persist microsoft source: %w", err)
+	}
+	return sourceID, nil
+}
+
+// AddGoogleSource persists a Google-backed source + the user's chosen
+// calendars in one transaction, then triggers an initial sync (caller's
+// responsibility — bridge wires it).
+func (a *API) AddGoogleSource(accountID, name string, selections []GoogleCalendarSelection) (string, error) {
+	if accountID == "" {
+		return "", errors.New("calendar: account ID required")
+	}
+	if name == "" {
+		return "", errors.New("calendar: name required")
+	}
+	if len(selections) == 0 {
+		return "", errors.New("calendar: at least one calendar must be selected")
+	}
+
+	sourceID := uuid.New().String()
+	now := time.Now().Unix()
+	err := a.store.WithTx(func(tx *sql.Tx) error {
+		if err := a.store.CreateSourceTx(tx, Source{
+			ID:              sourceID,
+			Type:            SourceTypeGoogle,
+			Name:            name,
+			URL:             "", // Google sources have no single endpoint URL
+			Username:        "", // OAuth-only; no username
+			SyncIntervalMin: 15,
+			AccountID:       accountID,
+			Enabled:         true,
+			Writable:        true, // CanWrite from googleProvider.Capabilities
+			CreatedAt:       now,
+		}); err != nil {
+			return err
+		}
+		for _, sel := range selections {
+			if sel.ID == "" {
+				return errors.New("calendar: selection missing calendar ID")
+			}
+			displayName := sel.DisplayName
+			if displayName == "" {
+				displayName = sel.ID
+			}
+			if err := a.store.CreateCalendarTx(tx, Calendar{
+				ID:          uuid.New().String(),
+				SourceID:    sourceID,
+				URL:         sel.ID, // store Google's calendarId in the url column
+				DisplayName: displayName,
+				Color:       sel.Color,
+				Visible:     true,
+				CreatedAt:   now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("persist google source: %w", err)
+	}
+	return sourceID, nil
 }
