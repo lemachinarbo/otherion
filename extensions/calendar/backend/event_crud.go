@@ -38,6 +38,11 @@ import (
 )
 
 // EventInput is the shape the frontend sends for create and update operations.
+//
+// TZName is the IANA timezone the wall-clock components should be anchored to
+// when serializing DTSTART/DTEND. Empty string → write as UTC ("Z" form);
+// non-empty → write with `TZID=<TZName>` parameter so other CalDAV clients
+// label the event in that zone instead of UTC.
 type EventInput struct {
 	CalendarID  string          `json:"calendarId"`
 	Summary     string          `json:"summary"`
@@ -46,6 +51,7 @@ type EventInput struct {
 	DTStartUnix int64           `json:"dtstartUnix"`
 	DTEndUnix   int64           `json:"dtendUnix"`
 	IsAllDay    bool            `json:"isAllDay,omitempty"`
+	TZName      string          `json:"tz,omitempty"`
 	Recurrence  *RecurrenceSpec `json:"recurrence,omitempty"`
 	Reminder    *ReminderSpec   `json:"reminder,omitempty"`
 }
@@ -115,6 +121,7 @@ func (a *API) CreateEvent(in EventInput) (string, error) {
 		DTStartUnix: in.DTStartUnix,
 		DTEndUnix:   in.DTEndUnix,
 		IsAllDay:    in.IsAllDay,
+		TZName:      in.TZName,
 		RRuleText:   rruleText(in.Recurrence),
 		ICSBlob:     icsBlob,
 		// ETag + Href empty: caldavProvider.PushEvent synthesizes the href
@@ -512,6 +519,7 @@ func (a *API) updateAllAndPush(src Source, cal Calendar, master Event, in EventI
 	ev.DTStartUnix = in.DTStartUnix
 	ev.DTEndUnix = in.DTEndUnix
 	ev.IsAllDay = in.IsAllDay
+	ev.TZName = in.TZName
 	ev.RRuleText = rruleText(in.Recurrence)
 	ev.ICSBlob = icsBlob
 
@@ -636,15 +644,24 @@ func rruleText(spec *RecurrenceSpec) string {
 }
 
 // setEventStartEnd writes DTSTART + DTEND on the event, choosing between
-// DATE form (all-day) and DATE-TIME form (timed).
+// DATE form (all-day) and DATE-TIME form (timed). When in.TZName is a
+// loadable IANA zone, the timed-event branch writes wall-clock + TZID
+// (so peers like Nextcloud's web UI label the event in that zone rather
+// than UTC); otherwise it falls back to UTC "Z" form.
 func setEventStartEnd(event *ical.Event, in EventInput) {
 	if in.IsAllDay {
 		setDateValue(event, ical.PropDateTimeStart, in.DTStartUnix)
 		setDateValue(event, ical.PropDateTimeEnd, in.DTEndUnix)
 		return
 	}
-	event.Props.SetDateTime(ical.PropDateTimeStart, time.Unix(in.DTStartUnix, 0).UTC())
-	event.Props.SetDateTime(ical.PropDateTimeEnd, time.Unix(in.DTEndUnix, 0).UTC())
+	loc := time.UTC
+	if in.TZName != "" {
+		if l, err := time.LoadLocation(in.TZName); err == nil {
+			loc = l
+		}
+	}
+	event.Props.SetDateTime(ical.PropDateTimeStart, time.Unix(in.DTStartUnix, 0).In(loc))
+	event.Props.SetDateTime(ical.PropDateTimeEnd, time.Unix(in.DTEndUnix, 0).In(loc))
 }
 
 // serializeVEVENT builds a single-event VCALENDAR for events.ics_blob.

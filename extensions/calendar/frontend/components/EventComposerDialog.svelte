@@ -73,6 +73,19 @@
 
   let submitting = $state(false)
   let errorMessage = $state('')
+  let errorRef = $state<HTMLElement | null>(null)
+
+  // When an error appears, scroll it into view — the error banner lives at
+  // the bottom of the scrollable form region and can fall outside the
+  // viewport on small dialogs, making a save failure look like a silent
+  // refresh. The effect depends on both errorMessage AND errorRef, so it
+  // re-fires once the {#if errorMessage} branch mounts and the bind:this
+  // assignment populates errorRef.
+  $effect(() => {
+    if (errorMessage && errorRef) {
+      errorRef.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  })
 
   // Writable target calendars for create + edit. Filters by Source.Writable
   // (set per provider's CanWrite capability) rather than by source type, so
@@ -250,6 +263,7 @@
       dtstartUnix,
       dtendUnix,
       isAllDay: isAllDay || undefined,
+      tz: isAllDay ? undefined : calendarSettings.effectiveTimezone,
       recurrence: buildRecurrenceSpec(),
       reminder: buildReminderSpec(),
     } as backend.EventInput
@@ -341,7 +355,7 @@
       </Dialog.Title>
     </Dialog.Header>
 
-    <div class="space-y-3 mt-2 max-h-[60vh] overflow-y-auto pr-1">
+    <div class="space-y-3 mt-2 max-h-[60vh] overflow-y-auto pl-1 pr-3">
       <div>
         <Label for="cal-composer-summary">{$_('calendar.composer.summaryLabel')}</Label>
         <Input
@@ -487,7 +501,7 @@
       </div>
 
       {#if errorMessage}
-        <div class="flex items-start gap-2 p-2 bg-destructive/10 rounded text-sm">
+        <div bind:this={errorRef} class="flex items-start gap-2 p-2 bg-destructive/10 rounded text-sm">
           <Icon icon="mdi:alert-circle" class="w-4 h-4 text-destructive shrink-0 mt-0.5" />
           <div class="text-xs text-destructive break-words">{errorMessage}</div>
         </div>

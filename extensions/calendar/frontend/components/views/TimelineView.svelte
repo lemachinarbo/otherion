@@ -397,6 +397,7 @@
     masterLocation: string
     masterCalendarID: string
     masterIsAllDay: boolean
+    masterTZName: string
   }
 
   let dragState = $state<DragState | null>(null)
@@ -452,6 +453,7 @@
       masterLocation: block.instance.location ?? '',
       masterCalendarID: block.instance.calendarId,
       masterIsAllDay: !!block.instance.isAllDay,
+      masterTZName: block.instance.tzName ?? '',
     }
   }
 
@@ -557,6 +559,10 @@
         dtstartUnix: newStartUnix,
         dtendUnix: newEndUnix,
         isAllDay: ds.masterIsAllDay,
+        // Preserve the event's anchor tz across a drag — moving an LA-anchored
+        // event must not silently re-label it as UTC just because the drag
+        // touchpoint happens to live in the user's effective-tz grid.
+        tz: ds.masterTZName || undefined,
       } as unknown as backend.EventUpdateInput, 'all')
       // Wait for the events store to reflect the new state BEFORE clearing
       // dragState — otherwise the block would briefly snap back to its old

@@ -804,6 +804,7 @@ export namespace backend {
 	    dtstartUnix: number;
 	    dtendUnix: number;
 	    isAllDay?: boolean;
+	    tz?: string;
 	    recurrence?: RecurrenceSpec;
 	    reminder?: ReminderSpec;
 	
@@ -820,6 +821,7 @@ export namespace backend {
 	        this.dtstartUnix = source["dtstartUnix"];
 	        this.dtendUnix = source["dtendUnix"];
 	        this.isAllDay = source["isAllDay"];
+	        this.tz = source["tz"];
 	        this.recurrence = this.convertValues(source["recurrence"], RecurrenceSpec);
 	        this.reminder = this.convertValues(source["reminder"], ReminderSpec);
 	    }
@@ -895,6 +897,7 @@ export namespace backend {
 	    dtstartUnix: number;
 	    dtendUnix: number;
 	    isAllDay?: boolean;
+	    tz?: string;
 	    recurrence?: RecurrenceSpec;
 	    reminder?: ReminderSpec;
 	
@@ -912,6 +915,7 @@ export namespace backend {
 	        this.dtstartUnix = source["dtstartUnix"];
 	        this.dtendUnix = source["dtendUnix"];
 	        this.isAllDay = source["isAllDay"];
+	        this.tz = source["tz"];
 	        this.recurrence = this.convertValues(source["recurrence"], RecurrenceSpec);
 	        this.reminder = this.convertValues(source["reminder"], ReminderSpec);
 	    }

@@ -26,19 +26,18 @@ try {
   logger.warn(`calendarSettings: localStorage read failed: ${err}`)
 }
 
-const effectiveTimezone = $derived(
-  displayTimezone !== ''
-    ? displayTimezone
-    : Intl.DateTimeFormat().resolvedOptions().timeZone
-)
-
 export const calendarSettings = {
   /** User's stored choice. Empty string = auto-detect. */
   get displayTimezone() { return displayTimezone },
 
   /** The IANA timezone all formatters + tzMath helpers should use. Resolves
-   *  the auto-detect fallback so callers never have to. */
-  get effectiveTimezone() { return effectiveTimezone },
+   *  the auto-detect fallback so callers never have to. Computed on each
+   *  read — avoids module-scope $derived sequencing surprises. */
+  get effectiveTimezone() {
+    return displayTimezone !== ''
+      ? displayTimezone
+      : Intl.DateTimeFormat().resolvedOptions().timeZone
+  },
 
   /** Set the user's tz choice. Empty string clears the override. */
   setDisplayTimezone(tz: string) {
