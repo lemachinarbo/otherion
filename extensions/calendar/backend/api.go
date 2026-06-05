@@ -102,6 +102,7 @@ func (a *API) AddCalDAVSource(name, serverURL, username, password string) (strin
 				DisplayName: dc.DisplayName,
 				Description: dc.Description,
 				Visible:     true,
+				Writable:    dc.Writable,
 				CreatedAt:   now,
 			}); err != nil {
 				return err
@@ -278,6 +279,7 @@ func (a *API) AddLocalCalendar(sourceID, displayName, color string) (string, err
 			Description: "",
 			Color:       color,
 			Visible:     true,
+			Writable:    true, // local calendars are always writable — we own the storage
 			CreatedAt:   now,
 		})
 	})
@@ -306,11 +308,15 @@ type GoogleCalendarChoice struct {
 }
 
 // GoogleCalendarSelection is one entry the frontend passes back to
-// AddGoogleSource — id + display name from the picker.
+// AddGoogleSource — id + display name from the picker. Writable mirrors
+// the picker's GoogleCalendarChoice.Writable (derived from AccessRole)
+// so we persist per-calendar permissions at add time without re-probing
+// Google's API.
 type GoogleCalendarSelection struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	Color       string `json:"color,omitempty"`
+	Writable    bool   `json:"writable"`
 }
 
 // ListGoogleCalendarsForAccount drives Google's /users/me/calendarList using
@@ -364,11 +370,14 @@ type MicrosoftCalendarChoice struct {
 }
 
 // MicrosoftCalendarSelection is one entry the frontend passes back to
-// AddMicrosoftSource — id + display name from the picker.
+// AddMicrosoftSource — id + display name from the picker. Writable mirrors
+// the picker's MicrosoftCalendarChoice.Writable (Graph canEdit) so we
+// persist per-calendar permissions at add time.
 type MicrosoftCalendarSelection struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	Color       string `json:"color,omitempty"`
+	Writable    bool   `json:"writable"`
 }
 
 // ListMicrosoftCalendarsForAccount drives Graph's /me/calendars using the
@@ -448,6 +457,7 @@ func (a *API) AddMicrosoftSource(accountID, name string, selections []MicrosoftC
 				DisplayName: displayName,
 				Color:       sel.Color,
 				Visible:     true,
+				Writable:    sel.Writable,
 				CreatedAt:   now,
 			}); err != nil {
 				return err
@@ -507,6 +517,7 @@ func (a *API) AddGoogleSource(accountID, name string, selections []GoogleCalenda
 				DisplayName: displayName,
 				Color:       sel.Color,
 				Visible:     true,
+				Writable:    sel.Writable,
 				CreatedAt:   now,
 			}); err != nil {
 				return err

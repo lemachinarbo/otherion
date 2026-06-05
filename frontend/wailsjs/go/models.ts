@@ -708,6 +708,7 @@ export namespace backend {
 	    description?: string;
 	    color?: string;
 	    visible: boolean;
+	    writable: boolean;
 	    ctag?: string;
 	    lastSyncedAt: number;
 	    createdAt: number;
@@ -725,6 +726,7 @@ export namespace backend {
 	        this.description = source["description"];
 	        this.color = source["color"];
 	        this.visible = source["visible"];
+	        this.writable = source["writable"];
 	        this.ctag = source["ctag"];
 	        this.lastSyncedAt = source["lastSyncedAt"];
 	        this.createdAt = source["createdAt"];
@@ -962,6 +964,7 @@ export namespace backend {
 	    id: string;
 	    displayName: string;
 	    color?: string;
+	    writable: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new GoogleCalendarSelection(source);
@@ -972,6 +975,7 @@ export namespace backend {
 	        this.id = source["id"];
 	        this.displayName = source["displayName"];
 	        this.color = source["color"];
+	        this.writable = source["writable"];
 	    }
 	}
 	export class MicrosoftCalendarChoice {
@@ -996,6 +1000,7 @@ export namespace backend {
 	    id: string;
 	    displayName: string;
 	    color?: string;
+	    writable: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new MicrosoftCalendarSelection(source);
@@ -1006,6 +1011,7 @@ export namespace backend {
 	        this.id = source["id"];
 	        this.displayName = source["displayName"];
 	        this.color = source["color"];
+	        this.writable = source["writable"];
 	    }
 	}
 	

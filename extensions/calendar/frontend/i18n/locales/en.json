@@ -89,7 +89,15 @@
         "title": "Pick colors for your calendars",
         "help": "You can change these later in calendar settings.",
         "done": "Done"
-      }
+      },
+      "defaultColumnHeader": "Default",
+      "globalDefaultLabel": "Global default",
+      "globalDefaultUnset": "(not set)",
+      "makeProviderDefault": "Set as default for {provider}",
+      "makeGlobalDefault": "Set as global default",
+      "providerLabelLocal": "Local calendars",
+      "providerLabelGoogle": "Google",
+      "providerLabelMicrosoft": "Outlook"
     },
     "toast": {
       "syncStarted": "Syncing {name}…",
@@ -158,6 +166,10 @@
       "syncNow": "Sync now",
       "deleteConfirmTitle": "Remove {name}?",
       "deleteConfirmDescription": "All calendars and events from this source will be removed locally. The CalDAV server is not affected.",
+      "defaultsSection": "Defaults for new events",
+      "globalDefaultLabel": "Global default",
+      "providerDefaultsLabel": "Defaults per account",
+      "noDefaultsHint": "Add a calendar to set defaults.",
       "alarmsSection": "Alarms",
       "alarmsHelp": "Events with VALARM reminders trigger a desktop notification at their trigger time.",
       "intervalMinutes": "{n} minutes",

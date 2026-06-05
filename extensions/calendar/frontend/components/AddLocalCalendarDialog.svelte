@@ -15,6 +15,8 @@
   import { toasts } from '$lib/stores/toast'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
+  import AddCalendarDefaultsControl from './AddCalendarDefaultsControl.svelte'
+  import { applyDefaultsAfterAdd } from '$extensions/calendar/frontend/lib/defaultsApply'
   // @ts-ignore - wailsjs bindings
   import { Calendar_AddLocalSource, Calendar_AddLocalCalendar } from '$wailsjs/go/app/App.js'
 
@@ -30,6 +32,10 @@
   let color = $state('')
   let submitting = $state(false)
   let errorMessage = $state('')
+  let providerDefaultTempId = $state('')
+  let globalDefaultRef = $state('')
+
+  const NEW_TEMP_ID = 'new'
 
   $effect(() => {
     if (!open) return
@@ -43,6 +49,8 @@
     color = ''
     errorMessage = ''
     submitting = false
+    providerDefaultTempId = ''
+    globalDefaultRef = ''
   })
 
   async function ensureLocalSource(): Promise<string> {
@@ -61,8 +69,14 @@
     errorMessage = ''
     try {
       const sourceID = await ensureLocalSource()
-      await Calendar_AddLocalCalendar(sourceID, displayName.trim(), color)
+      const newCalendarID = await Calendar_AddLocalCalendar(sourceID, displayName.trim(), color)
       await calendarSources.load()
+      applyDefaultsAfterAdd({
+        sourceId: sourceID,
+        added: [{ id: newCalendarID, tempId: NEW_TEMP_ID, writable: true }],
+        providerDefaultTempId,
+        globalDefaultRef,
+      })
       toasts.success($_('calendar.localCalendar.toastCreated', { values: { name: displayName.trim() } }))
       // Clear the submitting flag BEFORE close() so the guard inside
       // close() (which blocks user-initiated closes during a request)
@@ -110,6 +124,15 @@
           {color || $_('calendar.localCalendar.colorAuto')}
         </span>
       </div>
+
+      <AddCalendarDefaultsControl
+        mode="single"
+        sourceId={calendarSources.sources.find(s => s.type === 'local')?.id ?? ''}
+        providerLabel={$_('calendar.add.providerLabelLocal')}
+        candidates={[{ tempId: NEW_TEMP_ID, displayName: displayName || $_('calendar.localCalendar.title'), writable: true }]}
+        bind:providerDefaultTempId
+        bind:globalDefaultRef
+      />
 
       {#if errorMessage}
         <div class="flex items-start gap-2 p-2 bg-destructive/10 rounded text-sm">

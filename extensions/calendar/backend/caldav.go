@@ -2,10 +2,12 @@ package backend
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/emersion/go-webdav"
@@ -18,6 +20,12 @@ type DiscoveredCalendar struct {
 	Path        string
 	DisplayName string
 	Description string
+	// Writable reflects the DAV current-user-privilege-set probe. True when
+	// the user has at least one of: D:write, D:write-content, D:bind. When
+	// the probe fails (server doesn't expose privileges, network error,
+	// malformed XML), we default to true — better a save attempt that hits
+	// a real 403 than a hidden writable calendar.
+	Writable bool
 }
 
 // DiscoverCalendars probes a user-entered CalDAV server URL with the
@@ -172,9 +180,104 @@ func tryListCalendarsAt(ctx context.Context, httpClient webdav.HTTPClient, urlSt
 			Path:        cal.Path,
 			DisplayName: name,
 			Description: cal.Description,
+			Writable:    true, // probed below; defaulted true so probe-failure stays permissive
 		})
 	}
+
+	// Probe each calendar's current-user-privilege-set in parallel (cap 4 so
+	// we don't hammer the server). Failures keep the default-true value set
+	// above. This is what surfaces read-only calendars like Nextcloud's
+	// "Contacts Birthdays" as non-writable in the picker + composer.
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for i := range out {
+		i := i
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			fullURL := resolveCalDAVURL(urlStr, out[i].Path)
+			out[i].Writable = fetchCalendarWritable(ctx, httpClient, fullURL)
+		}()
+	}
+	wg.Wait()
+
 	return out, nil
+}
+
+// fetchCalendarWritable issues a Depth:0 PROPFIND for
+// current-user-privilege-set against calendarURL and returns true iff the
+// user holds at least one write-class privilege (D:write, D:write-content,
+// or D:bind). Any failure path returns true — better to allow a save attempt
+// that surfaces a real 403 at PUT time than to mistakenly hide a writable
+// calendar from the picker.
+func fetchCalendarWritable(ctx context.Context, httpClient webdav.HTTPClient, calendarURL string) bool {
+	body := `<?xml version="1.0" encoding="utf-8"?>
+<D:propfind xmlns:D="DAV:"><D:prop><D:current-user-privilege-set/></D:prop></D:propfind>`
+
+	req, err := http.NewRequestWithContext(ctx, "PROPFIND", calendarURL, strings.NewReader(body))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Depth", "0")
+	req.Header.Set("Content-Type", "application/xml; charset=utf-8")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return true
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return true
+	}
+
+	var ms davMultistatus
+	if err := xml.NewDecoder(resp.Body).Decode(&ms); err != nil {
+		return true
+	}
+
+	for _, r := range ms.Responses {
+		for _, ps := range r.Propstats {
+			for _, p := range ps.Prop.PrivilegeSet.Privileges {
+				if p.Write != nil || p.WriteContent != nil || p.Bind != nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// DAV multistatus / privilege-set XML shape for fetchCalendarWritable.
+// Tagged with "DAV: <name>" so encoding/xml matches the DAV: namespace.
+
+type davMultistatus struct {
+	XMLName   xml.Name      `xml:"DAV: multistatus"`
+	Responses []davResponse `xml:"response"`
+}
+
+type davResponse struct {
+	Href      string        `xml:"href"`
+	Propstats []davPropstat `xml:"propstat"`
+}
+
+type davPropstat struct {
+	Prop davProp `xml:"prop"`
+}
+
+type davProp struct {
+	PrivilegeSet davPrivilegeSet `xml:"current-user-privilege-set"`
+}
+
+type davPrivilegeSet struct {
+	Privileges []davPrivilege `xml:"privilege"`
+}
+
+type davPrivilege struct {
+	Write        *struct{} `xml:"write"`
+	WriteContent *struct{} `xml:"write-content"`
+	Bind         *struct{} `xml:"bind"`
 }
 
 // supportsVEVENT returns true when the calendar's

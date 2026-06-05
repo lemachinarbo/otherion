@@ -59,6 +59,50 @@
     calendarSources.sources.filter(s => s.type === 'caldav')
   )
 
+  // Defaults section. We expose:
+  //   - One global Select listing all writable calendars (grouped by source).
+  //   - One per-source Select for each writable source — provider default.
+  // Both bind into calendarSettings; stale entries return '' via the store's
+  // pruning so the trigger label gracefully falls back to "not set".
+  const writableSources = $derived(
+    calendarSources.sources.filter(s => s.writable)
+  )
+
+  interface GlobalDefaultOption {
+    value: string         // calendar ID
+    label: string         // "Personal · Murena"
+  }
+
+  const globalDefaultOptions = $derived.by<GlobalDefaultOption[]>(() => {
+    const out: GlobalDefaultOption[] = []
+    for (const src of writableSources) {
+      const cals = (calendarSources.calendarsBySource[src.id] || []).filter(c => c.writable !== false)
+      for (const cal of cals) {
+        out.push({ value: cal.id, label: `${cal.displayName} · ${src.name}` })
+      }
+    }
+    return out
+  })
+
+  function globalDefaultLabel(): string {
+    const id = calendarSettings.globalDefaultCalendarId
+    if (!id) return $_('calendar.add.globalDefaultUnset')
+    const match = globalDefaultOptions.find(o => o.value === id)
+    if (match) return match.label
+    return $_('calendar.add.globalDefaultUnset')
+  }
+
+  function providerDefaultLabelFor(src: backend.Source): string {
+    const id = calendarSettings.providerDefaultFor(src.id)
+    if (!id) return $_('calendar.add.globalDefaultUnset')
+    const cal = (calendarSources.calendarsBySource[src.id] || []).find(c => c.id === id)
+    return cal?.displayName ?? $_('calendar.add.globalDefaultUnset')
+  }
+
+  function writableCalsFor(sourceId: string) {
+    return (calendarSources.calendarsBySource[sourceId] || []).filter(c => c.writable !== false)
+  }
+
   // Per-row state — pending delete + per-source spinner for Sync Now.
   let deleteTarget = $state<backend.Source | null>(null)
   let deleting = $state(false)
@@ -334,6 +378,69 @@
             {$_('calendar.settings.addOutlook')}
           </Button>
         </div>
+      </section>
+
+      <!-- Defaults for new events — both global + per-source. Stale entries
+           (the source/calendar got deleted) return '' from the store getters
+           so the trigger label gracefully shows "not set" until the user
+           picks again. -->
+      <section class="space-y-2">
+        <h3 class="text-sm font-semibold text-foreground">
+          {$_('calendar.settings.defaultsSection')}
+        </h3>
+
+        {#if writableSources.length === 0}
+          <p class="text-xs text-muted-foreground">
+            {$_('calendar.settings.noDefaultsHint')}
+          </p>
+        {/if}
+
+        {#if writableSources.length > 0}
+          <div class="flex items-center justify-between gap-3 p-3 border border-border rounded-md">
+            <span class="text-sm text-foreground shrink-0">{$_('calendar.settings.globalDefaultLabel')}</span>
+            <Select.Root
+              value={calendarSettings.globalDefaultCalendarId}
+              onValueChange={(v) => { if (v !== undefined) calendarSettings.setGlobalDefaultCalendarId(v) }}
+            >
+              <Select.Trigger class="h-8 max-w-xs text-xs">
+                {globalDefaultLabel()}
+              </Select.Trigger>
+              <Select.Content>
+                {#each globalDefaultOptions as opt (opt.value)}
+                  <Select.Item value={opt.value} label={opt.label} />
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
+
+          <div class="text-xs text-muted-foreground mt-3">
+            {$_('calendar.settings.providerDefaultsLabel')}
+          </div>
+          {#each writableSources as src (src.id)}
+            {@const cals = writableCalsFor(src.id)}
+            {#if cals.length > 0}
+              <div class="flex items-center justify-between gap-3 p-3 border border-border rounded-md">
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-foreground truncate">{src.name}</div>
+                  <div class="text-xs text-muted-foreground mt-0.5">{calendarCountLabel(src)}</div>
+                </div>
+                <Select.Root
+                  value={calendarSettings.providerDefaultFor(src.id)}
+                  onValueChange={(v) => { if (v !== undefined) calendarSettings.setProviderDefaultFor(src.id, v) }}
+                >
+                  <Select.Trigger class="h-8 max-w-xs text-xs">
+                    {providerDefaultLabelFor(src)}
+                  </Select.Trigger>
+                  <Select.Content>
+                    {#each cals as cal (cal.id)}
+                      <Select.Item value={cal.id} label={cal.displayName} />
+                    {/each}
+                  </Select.Content>
+                </Select.Root>
+              </div>
+            {/if}
+          {/each}
+        {/if}
       </section>
 
       <!-- Alarms section (informational) -->

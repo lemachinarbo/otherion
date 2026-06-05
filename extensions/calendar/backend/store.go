@@ -195,6 +195,23 @@ var migrations = []extensions.Migration{
 				ON pending_writes(source_id, created_unix);
 		`,
 	},
+	{
+		Version: 6,
+		SQL: `
+			-- Per-calendar writability. Mirrors calendar_sources.writable but
+			-- at calendar granularity, so providers that expose mixed-permission
+			-- calendars under a single account (Google's "Contacts Birthdays"
+			-- via AccessRole=reader, Nextcloud shares via DAV current-user-
+			-- privilege-set, Microsoft's canEdit=false) can mark individual
+			-- calendars read-only without flipping the whole source.
+			--
+			-- DEFAULT 1 is the safe migration value — existing rows assume
+			-- writable until each provider's next sync re-evaluates. Local
+			-- calendars always stay 1 (we own the storage).
+
+			ALTER TABLE calendars ADD COLUMN writable INTEGER NOT NULL DEFAULT 1;
+		`,
+	},
 }
 
 // Store wraps the per-extension DB for the Calendar extension. Lives in an
@@ -252,6 +269,12 @@ type Source struct {
 }
 
 // Calendar is the Go type for one calendar row within a source.
+//
+// Writable defaults true on insert; providers that expose per-calendar
+// permissions (Google AccessRole, CalDAV current-user-privilege-set,
+// Microsoft canEdit) flip it false for read-only calendars at add time
+// and re-evaluate on periodic sync. The frontend composer hides
+// !Writable calendars from the "New event" picker.
 type Calendar struct {
 	ID           string `json:"id"`
 	SourceID     string `json:"sourceId"`
@@ -260,6 +283,7 @@ type Calendar struct {
 	Description  string `json:"description,omitempty"`
 	Color        string `json:"color,omitempty"`
 	Visible      bool   `json:"visible"`
+	Writable     bool   `json:"writable"`
 	Ctag         string `json:"ctag,omitempty"`
 	LastSyncedAt int64  `json:"lastSyncedAt"`
 	CreatedAt    int64  `json:"createdAt"`
@@ -403,13 +427,13 @@ func (s *Store) DeleteCalendar(id string) error {
 func (s *Store) GetCalendar(id string) (*Calendar, error) {
 	row := s.DB().QueryRow(`
 		SELECT id, source_id, url, display_name, COALESCE(description, ''),
-		       COALESCE(color, ''), visible, COALESCE(ctag, ''),
+		       COALESCE(color, ''), visible, writable, COALESCE(ctag, ''),
 		       COALESCE(last_synced_at, 0), created_at
 		FROM calendars WHERE id = ?`, id)
 	var c Calendar
-	var visibleInt int
+	var visibleInt, writableInt int
 	err := row.Scan(&c.ID, &c.SourceID, &c.URL, &c.DisplayName, &c.Description,
-		&c.Color, &visibleInt, &c.Ctag, &c.LastSyncedAt, &c.CreatedAt)
+		&c.Color, &visibleInt, &writableInt, &c.Ctag, &c.LastSyncedAt, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -417,6 +441,7 @@ func (s *Store) GetCalendar(id string) (*Calendar, error) {
 		return nil, fmt.Errorf("get calendar: %w", err)
 	}
 	c.Visible = visibleInt != 0
+	c.Writable = writableInt != 0
 	return &c, nil
 }
 
@@ -434,11 +459,11 @@ func (s *Store) CreateCalendarTx(tx *sql.Tx, cal Calendar) error {
 	_, err := tx.Exec(`
 		INSERT INTO calendars (
 			id, source_id, url, display_name, description, color,
-			visible, ctag, last_synced_at, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			visible, writable, ctag, last_synced_at, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cal.ID, cal.SourceID, cal.URL, cal.DisplayName, nullIfEmpty(cal.Description),
-		nullIfEmpty(cal.Color), boolToInt(cal.Visible), nullIfEmpty(cal.Ctag),
-		nullIfZero(cal.LastSyncedAt), cal.CreatedAt,
+		nullIfEmpty(cal.Color), boolToInt(cal.Visible), boolToInt(cal.Writable),
+		nullIfEmpty(cal.Ctag), nullIfZero(cal.LastSyncedAt), cal.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert calendar: %w", err)
@@ -452,7 +477,8 @@ func (s *Store) ListCalendars(sourceID string) ([]Calendar, error) {
 	rows, err := s.DB().Query(`
 		SELECT id, source_id, url, display_name,
 		       COALESCE(description, ''), COALESCE(color, ''),
-		       visible, COALESCE(ctag, ''), COALESCE(last_synced_at, 0), created_at
+		       visible, writable, COALESCE(ctag, ''),
+		       COALESCE(last_synced_at, 0), created_at
 		FROM calendars WHERE source_id = ? ORDER BY display_name ASC`, sourceID)
 	if err != nil {
 		return nil, fmt.Errorf("query calendars: %w", err)
@@ -462,15 +488,16 @@ func (s *Store) ListCalendars(sourceID string) ([]Calendar, error) {
 	var out []Calendar
 	for rows.Next() {
 		var cal Calendar
-		var visible int
+		var visible, writable int
 		if err := rows.Scan(
 			&cal.ID, &cal.SourceID, &cal.URL, &cal.DisplayName,
 			&cal.Description, &cal.Color,
-			&visible, &cal.Ctag, &cal.LastSyncedAt, &cal.CreatedAt,
+			&visible, &writable, &cal.Ctag, &cal.LastSyncedAt, &cal.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan calendar: %w", err)
 		}
 		cal.Visible = visible != 0
+		cal.Writable = writable != 0
 		out = append(out, cal)
 	}
 	if err := rows.Err(); err != nil {
@@ -801,6 +828,19 @@ func (s *Store) SetCalendarColor(calendarID, hex string) error {
 		nullIfEmpty(hex), calendarID)
 	if err != nil {
 		return fmt.Errorf("set calendar color: %w", err)
+	}
+	return nil
+}
+
+// UpdateCalendarWritable flips the per-calendar writable flag. Called by
+// each provider's discovery + periodic sync when the calendar's permission
+// signal (Google AccessRole, CalDAV current-user-privilege-set, Microsoft
+// canEdit) changes. Idempotent.
+func (s *Store) UpdateCalendarWritable(calendarID string, writable bool) error {
+	_, err := s.DB().Exec(`UPDATE calendars SET writable = ? WHERE id = ?`,
+		boolToInt(writable), calendarID)
+	if err != nil {
+		return fmt.Errorf("update calendar writable: %w", err)
 	}
 	return nil
 }

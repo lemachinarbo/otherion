@@ -87,15 +87,18 @@
     }
   })
 
-  // Writable target calendars for create + edit. Filters by Source.Writable
-  // (set per provider's CanWrite capability) rather than by source type, so
-  // CalDAV / Google / Microsoft writable calendars appear alongside local
-  // ones automatically as each provider lands.
+  // Writable target calendars for create + edit. Gates by BOTH source-level
+  // writability (e.g., a Google account with calendars.readonly scope is
+  // false-source) AND per-calendar writability (Google Contacts Birthdays,
+  // Nextcloud read-only shares, Microsoft canEdit=false). The per-calendar
+  // check uses `cal.writable !== false` to stay permissive — older rows
+  // from before migration v6 default to writable=true at the DB level.
   const writableCalendars = $derived.by(() => {
     const out: { id: string; name: string }[] = []
     for (const src of calendarSources.sources) {
       if (!src.writable) continue
       for (const cal of calendarSources.calendarsBySource[src.id] || []) {
+        if (cal.writable === false) continue
         out.push({ id: cal.id, name: cal.displayName })
       }
     }
@@ -142,7 +145,14 @@
 
   function initCreateDefaults() {
     const tz = calendarSettings.effectiveTimezone
-    calendarId = defaultCalendarId || writableCalendars[0]?.id || ''
+    // Resolution order: caller-passed defaultCalendarId → stored global
+    // default (validated writable by the store's stale-pruning getter) →
+    // first writable calendar in the list. The user's manual Select choice
+    // inside the composer overrides this on subsequent saves.
+    calendarId =
+      defaultCalendarId ||
+      calendarSettings.globalDefaultCalendarId ||
+      writableCalendars[0]?.id || ''
     const ref = defaultStart ?? new Date()
     const refInTz = toZonedTime(ref, tz)
     const isDefaultNow = defaultStart === null

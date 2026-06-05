@@ -22,6 +22,9 @@
   import { Label } from '$lib/components/ui/label'
   import { toasts } from '$lib/stores/toast'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
+  import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
+  import AddCalendarDefaultsControl from './AddCalendarDefaultsControl.svelte'
+  import { applyDefaultsAfterAdd } from '$extensions/calendar/frontend/lib/defaultsApply'
   // @ts-ignore - wailsjs bindings
   import { GetAccounts, Calendar_ListGoogleCalendarsForAccount, Calendar_AddGoogleSource } from '$wailsjs/go/app/App.js'
   // @ts-ignore - wailsjs bindings
@@ -39,6 +42,8 @@
   let calendars = $state<backend.GoogleCalendarChoice[]>([])
   let selectedIds = $state<Set<string>>(new Set())
   let sourceName = $state('')
+  let providerDefaultTempId = $state('')
+  let globalDefaultRef = $state('')
   let loadingAccounts = $state(false)
   let loadingCalendars = $state(false)
   let submitting = $state(false)
@@ -68,6 +73,8 @@
     sourceName = ''
     errorMessage = ''
     needsConsent = false
+    providerDefaultTempId = ''
+    globalDefaultRef = ''
   }
 
   async function loadAccounts() {
@@ -140,8 +147,27 @@
     try {
       const selections = calendars
         .filter((c) => selectedIds.has(c.id))
-        .map((c) => ({ id: c.id, displayName: c.summary, color: '' }))
-      await Calendar_AddGoogleSource(selectedAccountId, sourceName.trim(), selections)
+        .map((c) => ({ id: c.id, displayName: c.summary, color: '', writable: c.writable }))
+      const newSourceID = await Calendar_AddGoogleSource(selectedAccountId, sourceName.trim(), selections)
+      // Reload the sources store so the newly-persisted calendars have
+      // real backend IDs we can attach defaults to (provider uses Google's
+      // calendar id as the URL column; we match by URL → real id).
+      await calendarSources.load()
+      const newCals = calendarSources.calendarsBySource[newSourceID] || []
+      const added = selections.map(s => {
+        const match = newCals.find(c => c.url === s.id)
+        return {
+          id: match?.id ?? '',
+          tempId: s.id,
+          writable: s.writable,
+        }
+      }).filter(a => a.id !== '')
+      applyDefaultsAfterAdd({
+        sourceId: newSourceID,
+        added,
+        providerDefaultTempId,
+        globalDefaultRef,
+      })
       toasts.success($_('calendar.settings.addGoogleToastSuccess'))
       close()
     } catch (err) {
@@ -204,25 +230,38 @@
           <Label>{$_('calendar.settings.addGoogleCalendarsLabel')}</Label>
           <div class="max-h-48 overflow-y-auto rounded-md border border-border">
             {#each calendars as cal (cal.id)}
-              <label
+              <div
                 class="flex items-center gap-2 px-3 py-2 text-sm border-b border-border last:border-b-0
-                       hover:bg-muted/40 cursor-pointer {!cal.writable ? 'opacity-60' : ''}"
+                       hover:bg-muted/40 {!cal.writable ? 'opacity-60' : ''}"
                 title={!cal.writable ? $_('calendar.settings.addGoogleReadOnly') : ''}
               >
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(cal.id)}
-                  disabled={!cal.writable}
-                  onchange={() => toggleCalendar(cal.id)}
-                />
-                <span class="truncate flex-1">{cal.summary}</span>
-                {#if cal.primary}
-                  <span class="text-xs text-muted-foreground">{$_('calendar.settings.addGooglePrimary')}</span>
-                {/if}
-                {#if !cal.writable}
-                  <span class="text-xs text-muted-foreground">{$_('calendar.settings.addGoogleReadOnlyBadge')}</span>
-                {/if}
-              </label>
+                <label class="flex items-center gap-2 flex-1 cursor-pointer min-w-0">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(cal.id)}
+                    disabled={!cal.writable}
+                    onchange={() => toggleCalendar(cal.id)}
+                  />
+                  <span class="truncate flex-1">{cal.summary}</span>
+                  {#if cal.primary}
+                    <span class="text-xs text-muted-foreground">{$_('calendar.settings.addGooglePrimary')}</span>
+                  {/if}
+                  {#if !cal.writable}
+                    <span class="text-xs text-muted-foreground">{$_('calendar.settings.addGoogleReadOnlyBadge')}</span>
+                  {/if}
+                </label>
+                <label class="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                  <input
+                    type="radio"
+                    name="google-provider-default"
+                    class="accent-primary"
+                    checked={providerDefaultTempId === cal.id}
+                    disabled={!cal.writable || !selectedIds.has(cal.id)}
+                    onchange={() => { providerDefaultTempId = cal.id }}
+                  />
+                  {$_('calendar.add.defaultColumnHeader')}
+                </label>
+              </div>
             {/each}
           </div>
         </div>
@@ -232,6 +271,17 @@
           <Label for="source-name">{$_('calendar.settings.addGoogleSourceNameLabel')}</Label>
           <Input id="source-name" bind:value={sourceName} />
         </div>
+
+        <AddCalendarDefaultsControl
+          mode="multi"
+          sourceId={''}
+          providerLabel={sourceName || $_('calendar.add.providerLabelGoogle')}
+          candidates={calendars
+            .filter(c => selectedIds.has(c.id))
+            .map(c => ({ tempId: c.id, displayName: c.summary, writable: c.writable }))}
+          bind:providerDefaultTempId
+          bind:globalDefaultRef
+        />
       {/if}
 
       {#if errorMessage}

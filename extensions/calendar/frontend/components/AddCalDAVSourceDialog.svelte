@@ -9,6 +9,8 @@
   import { toasts } from '$lib/stores/toast'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
+  import AddCalendarDefaultsControl from './AddCalendarDefaultsControl.svelte'
+  import { applyDefaultsAfterAdd } from '$extensions/calendar/frontend/lib/defaultsApply'
 
   interface Props {
     open: boolean
@@ -16,6 +18,9 @@
   }
 
   let { open = $bindable(false), onClose }: Props = $props()
+
+  let providerDefaultTempId = $state('')
+  let globalDefaultRef = $state('')
 
   // Two-stage flow: 'form' (connection inputs) → 'colors' (per-calendar
   // pickers, post-persist). Backend writes already happened by the time we
@@ -43,6 +48,8 @@
     passwordInput = ''
     lastError = ''
     submitting = false
+    providerDefaultTempId = ''
+    globalDefaultRef = ''
   })
 
   // Calendars discovered for the new source — populated after Stage 1 by
@@ -64,8 +71,29 @@
 
   function close() {
     if (submitting) return
+    finalizeDefaults()
     open = false
     onClose?.()
+  }
+
+  // Apply the user's provider-default / global-default picks. The dialog
+  // calls this on close() — the colors stage doesn't have its own commit
+  // button beyond "Done" (which routes here too). The added calendars use
+  // their real backend IDs as both id and tempId.
+  function finalizeDefaults() {
+    if (newSourceID === '') return
+    const added = discoveredCalendars.map(c => ({
+      id: c.id,
+      tempId: c.id,
+      writable: c.writable !== false,
+    }))
+    if (added.length === 0) return
+    applyDefaultsAfterAdd({
+      sourceId: newSourceID,
+      added,
+      providerDefaultTempId,
+      globalDefaultRef,
+    })
   }
 
   function validate(): boolean {
@@ -224,14 +252,37 @@
             ></span>
             <span class="flex-1 min-w-0 truncate text-sm text-foreground">
               {cal.displayName}
+              {#if cal.writable === false}
+                <span class="ml-1 text-xs text-muted-foreground">({$_('calendar.hooks.readOnlyBadge')})</span>
+              {/if}
             </span>
             <ColorPicker
               value={cal.color ?? ''}
               onchange={(hex) => { void calendarSources.setColor(cal.id, hex) }}
             />
+            <label class="flex items-center gap-1 text-xs text-muted-foreground shrink-0" title={$_('calendar.add.makeProviderDefault', { values: { provider: nameInput } })}>
+              <input
+                type="radio"
+                name="cal-provider-default"
+                class="accent-primary"
+                checked={providerDefaultTempId === cal.id}
+                disabled={cal.writable === false}
+                onchange={() => { providerDefaultTempId = cal.id }}
+              />
+              {$_('calendar.add.defaultColumnHeader')}
+            </label>
           </div>
         {/each}
       </div>
+
+      <AddCalendarDefaultsControl
+        mode="multi"
+        sourceId={newSourceID}
+        providerLabel={nameInput}
+        candidates={discoveredCalendars.map(c => ({ tempId: c.id, displayName: c.displayName, writable: c.writable !== false }))}
+        bind:providerDefaultTempId
+        bind:globalDefaultRef
+      />
 
       <div class="flex items-center justify-end gap-2 pt-4 border-t border-border mt-4">
         <Button onclick={close}>

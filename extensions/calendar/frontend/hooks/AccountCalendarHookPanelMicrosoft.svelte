@@ -93,7 +93,7 @@
     try {
       const selections = calendars
         .filter((c) => selectedIds.has(c.id))
-        .map((c) => ({ id: c.id, displayName: c.name, color: '' }))
+        .map((c) => ({ id: c.id, displayName: c.name, color: '', writable: c.writable }))
       await Calendar_AddMicrosoftSource(accountId, sourceName.trim(), selections)
       await SetExtensionEnabled('calendar', true)
       await refreshExtensionRegistry()
