@@ -331,7 +331,11 @@
       close()
     } catch (err) {
       console.error('Failed to update contact:', err)
-      toasts.error($_('contacts.toast.failedUpdate'))
+      const msg = (err as Error)?.message ?? String(err)
+      // Surface the backend message so the user can see *why* (additional
+      // consent required, etag mismatch, network error, etc.) instead of
+      // staring at a generic "failed" toast.
+      toasts.error(`${$_('contacts.toast.failedUpdate')}: ${msg}`)
     } finally {
       saving = false
     }

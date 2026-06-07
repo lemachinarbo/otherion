@@ -61,18 +61,18 @@ func (a *API) createMicrosoftContact(input coreapi.ContactCreateInput, email str
 	if a.extStore == nil {
 		return "", fmt.Errorf("contacts.createMicrosoftContact: extension store not wired")
 	}
-	if source == nil || source.AccountID == nil || *source.AccountID == "" {
-		return "", fmt.Errorf("contacts.createMicrosoftContact: microsoft source has no linked account")
+	if source == nil {
+		return "", fmt.Errorf("contacts.createMicrosoftContact: nil source")
 	}
 	if !source.Writable {
 		return "", fmt.Errorf("contacts.createMicrosoftContact: source is not writable; enable write access")
 	}
 
-	httpClient, err := a.core.Auth().HTTPClient(*source.AccountID, []coreapi.AuthScope{
-		{Resource: microsoftWriteScope, Reason: "Create contacts in your Microsoft account"},
+	httpClient, err := a.httpClientForSource(source, coreapi.AuthScope{
+		Resource: microsoftWriteScope, Reason: "Create contacts in your Microsoft account",
 	})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("contacts.createMicrosoftContact: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
@@ -174,11 +174,11 @@ func (a *API) updateMicrosoftContact(rec *contact.Record) error {
 		return fmt.Errorf("contacts.updateMicrosoftContact: source is not writable; enable write access")
 	}
 
-	httpClient, err := a.core.Auth().HTTPClient(*source.AccountID, []coreapi.AuthScope{
-		{Resource: microsoftWriteScope, Reason: "Update contacts in your Microsoft account"},
+	httpClient, err := a.httpClientForSource(source, coreapi.AuthScope{
+		Resource: microsoftWriteScope, Reason: "Update contacts in your Microsoft account",
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("contacts.updateMicrosoftContact: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
@@ -258,11 +258,11 @@ func (a *API) deleteMicrosoftContact(rec *contact.Record) error {
 		return fmt.Errorf("contacts.deleteMicrosoftContact: source is not writable; enable write access")
 	}
 
-	httpClient, err := a.core.Auth().HTTPClient(*source.AccountID, []coreapi.AuthScope{
-		{Resource: microsoftWriteScope, Reason: "Delete contacts from your Microsoft account"},
+	httpClient, err := a.httpClientForSource(source, coreapi.AuthScope{
+		Resource: microsoftWriteScope, Reason: "Delete contacts from your Microsoft account",
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("contacts.deleteMicrosoftContact: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
@@ -297,12 +297,12 @@ func (a *API) deleteMicrosoftContact(rec *contact.Record) error {
 // manifest entry, so this call doesn't trigger consent even on a fresh
 // read-only source.
 func (a *API) listMicrosoftAddressbooks(source *carddav.Source) ([]coreapi.Addressbook, error) {
-	if a.core == nil || source == nil || source.AccountID == nil || *source.AccountID == "" {
+	if source == nil {
 		return nil, nil
 	}
 
-	httpClient, err := a.core.Auth().HTTPClient(*source.AccountID, []coreapi.AuthScope{
-		{Resource: microsoftReadScope, Reason: "List contact folders"},
+	httpClient, err := a.httpClientForSource(source, coreapi.AuthScope{
+		Resource: microsoftReadScope, Reason: "List contact folders",
 	})
 	if err != nil {
 		return nil, err
@@ -352,9 +352,6 @@ func (a *API) microsoftSourceAndHrefForRecord(rec *contact.Record) (*carddav.Sou
 	}
 	if source == nil {
 		return nil, "", fmt.Errorf("no source owns addressbook %s", rec.SourceRef)
-	}
-	if source.AccountID == nil || *source.AccountID == "" {
-		return nil, "", fmt.Errorf("source %s has no linked account", source.ID)
 	}
 
 	var href string

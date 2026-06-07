@@ -74,6 +74,15 @@ type ContactsBridgeDeps struct {
 	//     the password but core owns the credential lifecycle (Pattern B
 	//     per docs/EXTENSIONS.md).
 	Core coreapi.Core
+
+	// GetStandaloneSourceToken returns a valid OAuth access token for a
+	// standalone contacts-only OAuth source (account_id IS NULL). Mirrors
+	// the host getter the carddav syncer uses for the read path; the
+	// contacts API uses it for the write path so create/update/delete work
+	// on standalone Google/Microsoft sources just like they do on
+	// account-linked ones. Nil-safe (writes to standalone sources then
+	// error with a clear message).
+	GetStandaloneSourceToken func(sourceID string) (string, error)
 }
 
 // SettingsStore is the narrow interface the bridge needs from the host's
@@ -141,6 +150,7 @@ func (b *ContactsBridge) ensureInit() error {
 			return
 		}
 		b.api = NewAPI(contactStore, carddavStore, extStore, b.deps.Core, b.deps.DB.DB)
+		b.api.SetStandaloneSourceTokenGetter(b.deps.GetStandaloneSourceToken)
 	})
 	return b.initErr
 }

@@ -72,17 +72,29 @@ func TestGoogleWriter_CreateContact_Happy(t *testing.T) {
 }
 
 func TestGoogleWriter_UpdateContact_StampsEtagAndMask(t *testing.T) {
-	var gotMethod, gotPath, gotMask string
-	var gotBody googlePerson
+	var patchMethod, patchPath, patchMask string
+	var patchBody googlePerson
+	const serverSourceID = "ServerAssignedSrcID"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		gotPath = r.URL.Path
-		gotMask = r.URL.Query().Get("updatePersonFields")
-		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		// The writer first GETs to learn the canonical CONTACT source.id, then
+		// PATCHes. Distinguish by method.
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(googlePerson{
+				ResourceName: "people/c123",
+				Metadata: &googlePersonMetadata{
+					Sources: []googlePersonSource{{Type: "CONTACT", ID: serverSourceID, ETag: "server-current-etag"}},
+				},
+			})
+			return
+		}
+		patchMethod = r.Method
+		patchPath = r.URL.Path
+		patchMask = r.URL.Query().Get("updatePersonFields")
+		_ = json.NewDecoder(r.Body).Decode(&patchBody)
 		_ = json.NewEncoder(w).Encode(googlePerson{
 			ResourceName: "people/c123",
 			Metadata: &googlePersonMetadata{
-				Sources: []googlePersonSource{{Type: "CONTACT", ETag: "ETAG-2"}},
+				Sources: []googlePersonSource{{Type: "CONTACT", ID: serverSourceID, ETag: "ETAG-2"}},
 			},
 		})
 	}))
@@ -95,25 +107,37 @@ func TestGoogleWriter_UpdateContact_StampsEtagAndMask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateContact: %v", err)
 	}
-	if gotMethod != http.MethodPatch {
-		t.Errorf("method: got %q, want PATCH", gotMethod)
+	if patchMethod != http.MethodPatch {
+		t.Errorf("method: got %q, want PATCH", patchMethod)
 	}
-	if gotPath != "/v1/people/c123:updateContact" {
-		t.Errorf("path: got %q", gotPath)
+	if patchPath != "/v1/people/c123:updateContact" {
+		t.Errorf("path: got %q", patchPath)
 	}
-	if gotMask != "names,emailAddresses" {
-		t.Errorf("mask: got %q", gotMask)
+	if patchMask != "names,emailAddresses" {
+		t.Errorf("mask: got %q", patchMask)
 	}
-	if gotBody.Metadata == nil || len(gotBody.Metadata.Sources) == 0 {
+	if patchBody.Metadata == nil || len(patchBody.Metadata.Sources) == 0 {
 		t.Fatalf("metadata.sources missing in request body")
 	}
-	if gotBody.Metadata.Sources[0].ETag != "ETAG-1" {
-		t.Errorf("etag in body: got %q, want ETAG-1", gotBody.Metadata.Sources[0].ETag)
+	if patchBody.Metadata.Sources[0].ETag != "ETAG-1" {
+		t.Errorf("etag in body: got %q, want ETAG-1", patchBody.Metadata.Sources[0].ETag)
+	}
+	if patchBody.Metadata.Sources[0].ID != serverSourceID {
+		t.Errorf("source.id in body: got %q, want %q (inherited from GET response, not derived)", patchBody.Metadata.Sources[0].ID, serverSourceID)
 	}
 }
 
 func TestGoogleWriter_UpdateContact_EtagMismatchTyped(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(googlePerson{
+				ResourceName: "people/c123",
+				Metadata: &googlePersonMetadata{
+					Sources: []googlePersonSource{{Type: "CONTACT", ID: "src", ETag: "server-current"}},
+				},
+			})
+			return
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = io.WriteString(w, `{"error":{"code":400,"message":"etag mismatch","status":"FAILED_PRECONDITION"}}`)
 	}))

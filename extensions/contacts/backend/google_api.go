@@ -66,20 +66,21 @@ func (a *API) createGoogleContact(input coreapi.ContactCreateInput, email string
 	if a.extStore == nil {
 		return "", fmt.Errorf("contacts.createGoogleContact: extension store not wired")
 	}
-	if source == nil || source.AccountID == nil || *source.AccountID == "" {
-		return "", fmt.Errorf("contacts.createGoogleContact: google source has no linked account")
+	if source == nil {
+		return "", fmt.Errorf("contacts.createGoogleContact: nil source")
 	}
 	if !source.Writable {
 		return "", fmt.Errorf("contacts.createGoogleContact: source is not writable; enable write access")
 	}
 
-	httpClient, err := a.core.Auth().HTTPClient(*source.AccountID, []coreapi.AuthScope{
-		{Resource: googleWriteScope, Reason: "Create contacts in your Google account"},
+	httpClient, err := a.httpClientForSource(source, coreapi.AuthScope{
+		Resource: googleWriteScope, Reason: "Create contacts in your Google account",
 	})
 	if err != nil {
-		// ErrAdditionalConsentRequired flows up — the write-access grant
-		// flow is the user-facing surface that resolves it.
-		return "", err
+		// ErrAdditionalConsentRequired flows up from the account-linked
+		// path — the write-access grant flow is the user-facing surface
+		// that resolves it.
+		return "", fmt.Errorf("contacts.createGoogleContact: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
@@ -189,11 +190,11 @@ func (a *API) updateGoogleContact(rec *contact.Record) error {
 		return fmt.Errorf("contacts.updateGoogleContact: source is not writable; enable write access")
 	}
 
-	httpClient, err := a.core.Auth().HTTPClient(*source.AccountID, []coreapi.AuthScope{
-		{Resource: googleWriteScope, Reason: "Update contacts in your Google account"},
+	httpClient, err := a.httpClientForSource(source, coreapi.AuthScope{
+		Resource: googleWriteScope, Reason: "Update contacts in your Google account",
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("contacts.updateGoogleContact: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
@@ -295,11 +296,11 @@ func (a *API) deleteGoogleContact(rec *contact.Record) error {
 		return fmt.Errorf("contacts.deleteGoogleContact: source is not writable; enable write access")
 	}
 
-	httpClient, err := a.core.Auth().HTTPClient(*source.AccountID, []coreapi.AuthScope{
-		{Resource: googleWriteScope, Reason: "Delete contacts from your Google account"},
+	httpClient, err := a.httpClientForSource(source, coreapi.AuthScope{
+		Resource: googleWriteScope, Reason: "Delete contacts from your Google account",
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("contacts.deleteGoogleContact: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), googleCallTimeout)
@@ -336,12 +337,12 @@ func (a *API) deleteGoogleContact(rec *contact.Record) error {
 // manifest entry, so this call doesn't trigger consent even on a fresh
 // read-only source.
 func (a *API) listGoogleAddressbooks(source *carddav.Source) ([]coreapi.Addressbook, error) {
-	if a.core == nil || source == nil || source.AccountID == nil || *source.AccountID == "" {
+	if source == nil {
 		return nil, nil
 	}
 
-	httpClient, err := a.core.Auth().HTTPClient(*source.AccountID, []coreapi.AuthScope{
-		{Resource: googleReadScope, Reason: "List contact groups"},
+	httpClient, err := a.httpClientForSource(source, coreapi.AuthScope{
+		Resource: googleReadScope, Reason: "List contact groups",
 	})
 	if err != nil {
 		return nil, err
@@ -411,9 +412,6 @@ func (a *API) googleSourceAndHrefForRecord(rec *contact.Record) (*carddav.Source
 	}
 	if source == nil {
 		return nil, "", fmt.Errorf("no source owns addressbook %s", rec.SourceRef)
-	}
-	if source.AccountID == nil || *source.AccountID == "" {
-		return nil, "", fmt.Errorf("source %s has no linked account", source.ID)
 	}
 
 	var href string

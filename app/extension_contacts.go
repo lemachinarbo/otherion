@@ -41,6 +41,13 @@ func (a *App) initContactsExtension() {
 		// back the sidebar + account-setup hook flows; Storage().HostSecrets()
 		// backs CardDAV writes.
 		Core: contactsCore,
+		// Mirrors what the carddav syncer gets via SetTokenGetters — the
+		// same proactively-refreshing token accessor for standalone
+		// contacts-only OAuth sources, now reused on the write side so
+		// create/update/delete succeed regardless of whether the user
+		// linked the source to an email account or set it up via the
+		// contacts-only OAuth flow.
+		GetStandaloneSourceToken: a.getValidContactSourceOAuthToken,
 	})
 
 	// All OAuth slot resolution lives in internal/oauth2/core_provider.go

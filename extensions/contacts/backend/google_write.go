@@ -405,13 +405,45 @@ func (w *GoogleContactsWriter) UpdateContact(ctx context.Context, resourceName, 
 	if fieldMask == "" {
 		return nil, errors.New("google people: UpdateContact: updatePersonFields mask is required")
 	}
-	// Defensive copy so we can stamp the etag without mutating the caller's
-	// person. Etag goes in metadata.sources[0].etag with type="CONTACT".
+	if etag == "" {
+		return nil, errors.New("google people: UpdateContact: etag is required")
+	}
+
+	// Google identifies "the source that is being updated" by matching
+	// metadata.sources[].id, which is server-assigned — the format is not
+	// derivable from resourceName. Fetch the current Person to inherit the
+	// canonical source.id, then stamp it alongside the caller-supplied etag
+	// (the optimistic-lock token; mismatch triggers FAILED_PRECONDITION at
+	// PATCH time). Without source.id matching, the API rejects with
+	// "Request must set person.etag or person.metadata.sources.etag for the
+	// source that is being updated." Do NOT also set the top-level
+	// person.ETag — that's a different (person-wide) etag.
+	current, err := w.GetContact(ctx, resourceName)
+	if err != nil {
+		return nil, fmt.Errorf("google people: UpdateContact: read source.id: %w", err)
+	}
+	var sourceID string
+	if current != nil && current.Metadata != nil {
+		for _, s := range current.Metadata.Sources {
+			if s.Type == "CONTACT" {
+				sourceID = s.ID
+				break
+			}
+		}
+	}
+	if sourceID == "" {
+		return nil, errors.New("google people: UpdateContact: server returned no CONTACT source.id")
+	}
+
 	clean := *person
 	clean.ResourceName = ""
 	clean.ETag = ""
 	clean.Metadata = &googlePersonMetadata{
-		Sources: []googlePersonSource{{Type: "CONTACT", ETag: etag}},
+		Sources: []googlePersonSource{{
+			Type: "CONTACT",
+			ID:   sourceID,
+			ETag: etag,
+		}},
 	}
 
 	q := url.Values{

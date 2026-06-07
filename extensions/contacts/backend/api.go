@@ -59,6 +59,14 @@ type API struct {
 	// to compose contact.UpsertRecordTx + carddav_record_state writes inside
 	// a single transaction. Nil disables OAuth provider writes (tests).
 	db *sql.DB
+	// getStandaloneSourceToken returns a valid OAuth access token for a
+	// standalone (account_id-less) contact source, proactively refreshing
+	// when within 5 minutes of expiry. Mirrors what the sync layer uses
+	// (`getSourceToken` in internal/carddav/sync.go); set via
+	// SetStandaloneSourceTokenGetter at bridge wiring time. Nil disables
+	// OAuth writes for standalone sources (they error with a clear message);
+	// account-linked sources still go through core.Auth().HTTPClient.
+	getStandaloneSourceToken func(sourceID string) (string, error)
 }
 
 // NewAPI constructs the Contacts API wrapper. Any store may be nil — the
@@ -85,6 +93,15 @@ func NewAPI(localStore *contact.Store, carddavStore *carddav.Store, extStore *St
 		core:         core,
 		db:           db,
 	}
+}
+
+// SetStandaloneSourceTokenGetter wires the host-provided closure that returns
+// a valid OAuth access token for a standalone (account_id-less) contact
+// source. Called once by the bridge during ensureInit; nil-safe (writes to
+// standalone sources will then error with a clear "getter not wired" message
+// rather than panicking).
+func (a *API) SetStandaloneSourceTokenGetter(fn func(sourceID string) (string, error)) {
+	a.getStandaloneSourceToken = fn
 }
 
 // SearchContacts delegates to the core contact store's merged search across

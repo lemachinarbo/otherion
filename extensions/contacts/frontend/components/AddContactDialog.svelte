@@ -12,6 +12,7 @@
   // for B; this dialog stays at email + name. Later expansion is a separate
   // track.
 
+  import { untrack } from 'svelte'
   import { _ } from 'svelte-i18n'
   import * as Dialog from '$lib/components/ui/dialog'
   import * as Select from '$lib/components/ui/select'
@@ -52,15 +53,17 @@
   let addressbooks = $state<v1.Addressbook[]>([])
   let loadingAddressbooks = $state<boolean>(false)
 
-  // Picker options. CardDAV sources are filtered to writable; OAuth excluded
-  // until 2b.3.
+  // Picker options. Any writable external source qualifies — CardDAV,
+  // Google (People API), or Microsoft (Graph). The backend's CreateContact
+  // dispatches by source.Type to the matching provider create handler.
   type PickerOption = { value: string; label: string }
   const sourceOptions: PickerOption[] = $derived.by(() => {
     const opts: PickerOption[] = [
       { value: LOCAL_VALUE, label: $_('contacts.add.localOption') },
     ]
     for (const s of contactSourcesStore.sources) {
-      if (s.type === 'carddav' && s.writable) {
+      if (!s.writable) continue
+      if (s.type === 'carddav' || s.type === 'google' || s.type === 'microsoft') {
         opts.push({ value: s.id, label: s.name })
       }
     }
@@ -83,21 +86,33 @@
     return match ? sel : LOCAL_VALUE
   }
 
-  // Reset state each time the dialog opens.
+  // Reset state each time the dialog opens. The reset body MUST run inside
+  // untrack: load() reassigns contactSourcesStore.sources, autoFillFromSidebar
+  // reads sourceOptions (which depends on sources), and writing emailInput /
+  // nameInput / sourceValue feeds back into the picker. Without untrack the
+  // effect re-runs on every load() and on every keystroke into the inputs,
+  // clearing the fields faster than the user can type ("can't type" symptom
+  // observed when picking a Google/Microsoft source).
   $effect(() => {
     if (!open) return
-    // Make sure sources are loaded before computing the auto-fill.
-    contactSourcesStore.load()
-    sourceValue = autoFillFromSidebar()
-    addressbookValue = ''
-    emailInput = ''
-    nameInput = ''
-    errors = {}
-    saving = false
+    untrack(() => {
+      contactSourcesStore.load()
+      sourceValue = autoFillFromSidebar()
+      addressbookValue = ''
+      emailInput = ''
+      nameInput = ''
+      errors = {}
+      saving = false
+    })
   })
 
-  // Fetch addressbooks whenever the user picks a CardDAV source (or the
-  // dialog auto-fills to one). Local doesn't need an addressbook fetch.
+  // Fetch addressbooks whenever the user picks an external source (CardDAV,
+  // Google, Microsoft). Local doesn't need an addressbook fetch.
+  //
+  // .catch is required: without it, a rejected promise from listAddressbooks
+  // becomes an unhandled rejection, which can break Svelte reactivity on the
+  // current effect run and leave the dialog in a state where input handlers
+  // stop firing (e.g., Microsoft picker → backend errors → typing blocked).
   $effect(() => {
     if (!open) return
     if (sourceValue === LOCAL_VALUE) {
@@ -113,6 +128,12 @@
         // get a value here so the form-state is always coherent; the dropdown
         // just isn't rendered when count === 1.
         addressbookValue = abs.length > 0 ? abs[0].id : ''
+      })
+      .catch(err => {
+        console.error('Failed to load addressbooks for source', sourceValue, err)
+        addressbooks = []
+        addressbookValue = ''
+        toasts.error($_('contacts.toast.failedAdd'))
       })
       .finally(() => {
         loadingAddressbooks = false
@@ -157,7 +178,9 @@
       return
     }
     console.error('Failed to create contact:', err)
-    toasts.error($_('contacts.toast.failedAdd'))
+    // Surface the backend message so the user can see *why* (additional
+    // consent required, network error, provider write not enabled, etc.).
+    toasts.error(`${$_('contacts.toast.failedAdd')}: ${msg}`)
   }
 
   async function save() {
