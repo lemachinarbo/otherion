@@ -23,7 +23,7 @@
   import { toasts } from '$lib/stores/toast'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
-  import AddCalendarDefaultsControl from './AddCalendarDefaultsControl.svelte'
+  import CalendarColorPickStage from './CalendarColorPickStage.svelte'
   import { applyDefaultsAfterAdd } from '$extensions/calendar/frontend/lib/defaultsApply'
   // @ts-ignore - wailsjs bindings
   import { GetAccounts, Calendar_ListGoogleCalendarsForAccount, Calendar_AddGoogleSource, Calendar_GrantCalendarAccess } from '$wailsjs/go/app/App.js'
@@ -51,6 +51,18 @@
   let errorMessage = $state('')
   let needsConsent = $state(false)
 
+  // Two-stage flow mirroring AddCalDAVSourceDialog: 'form' collects account
+  // + calendars + source name; on submit we persist and transition to
+  // 'colors' for per-calendar color + default selection. Close commits the
+  // defaults via finalizeDefaults().
+  let stage = $state<'form' | 'colors'>('form')
+  let newSourceID = $state('')
+
+  const discoveredCalendars = $derived.by(() => {
+    if (stage !== 'colors' || newSourceID === '') return []
+    return calendarSources.calendarsBySource[newSourceID] ?? []
+  })
+
   const googleAccounts = $derived(
     accounts.filter((a) => (a.imapHost || '').includes('gmail.com') || (a.imapHost || '').includes('googlemail.com')),
   )
@@ -76,6 +88,8 @@
     needsConsent = false
     providerDefaultTempId = ''
     globalDefaultRef = ''
+    stage = 'form'
+    newSourceID = ''
   }
 
   async function loadAccounts() {
@@ -196,33 +210,21 @@
       // tolerates it and the composer falls back to live lookup.
       const boundAccount = accounts.find((a) => a.id === selectedAccountId)
       const accountEmail = boundAccount?.email ?? ''
-      const newSourceID = await Calendar_AddGoogleSource(
+      const sourceID = await Calendar_AddGoogleSource(
         selectedAccountId,
         sourceName.trim(),
         accountEmail,
         selections,
       )
       // Reload the sources store so the newly-persisted calendars have
-      // real backend IDs we can attach defaults to (provider uses Google's
-      // calendar id as the URL column; we match by URL → real id).
+      // real backend IDs we can attach defaults to.
       await calendarSources.load()
-      const newCals = calendarSources.calendarsBySource[newSourceID] || []
-      const added = selections.map(s => {
-        const match = newCals.find(c => c.url === s.id)
-        return {
-          id: match?.id ?? '',
-          tempId: s.id,
-          writable: s.writable,
-        }
-      }).filter(a => a.id !== '')
-      applyDefaultsAfterAdd({
-        sourceId: newSourceID,
-        added,
-        providerDefaultTempId,
-        globalDefaultRef,
-      })
       toasts.success($_('calendar.settings.addGoogleToastSuccess'))
-      close()
+      // Transition into the shared colors stage so the user can pick
+      // colors + defaults before dismissing. Defaults commit at close
+      // via finalizeDefaults().
+      newSourceID = sourceID
+      stage = 'colors'
     } catch (err) {
       errorMessage = $_('calendar.settings.addGoogleToastError', { values: { message: String(err) } })
     } finally {
@@ -230,14 +232,38 @@
     }
   }
 
+  // Commit the user's provider / global default picks once they dismiss
+  // the colors stage. Mirrors AddCalDAVSourceDialog's finalizeDefaults
+  // shape — discoveredCalendars uses cal.id as both backend id and
+  // tempId, matching what the shared stage's radio bindings write into
+  // providerDefaultTempId.
+  function finalizeDefaults() {
+    if (newSourceID === '') return
+    const added = discoveredCalendars.map(c => ({
+      id: c.id,
+      tempId: c.id,
+      writable: c.writable !== false,
+    }))
+    if (added.length === 0) return
+    applyDefaultsAfterAdd({
+      sourceId: newSourceID,
+      added,
+      providerDefaultTempId,
+      globalDefaultRef,
+    })
+  }
+
   function close() {
+    finalizeDefaults()
+    newSourceID = ''
     open = false
     onClose?.()
   }
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root bind:open onOpenChange={(v) => { if (!v) close() }}>
   <Dialog.Content class="max-w-md">
+    {#if stage === 'form'}
     <Dialog.Header>
       <Dialog.Title>{$_('calendar.settings.addGoogleTitle')}</Dialog.Title>
       <Dialog.Description>{$_('calendar.settings.addGoogleDescription')}</Dialog.Description>
@@ -297,37 +323,24 @@
               <span class="font-medium">{$_('calendar.settings.addGoogleSelectAll')}</span>
             </label>
             {#each calendars as cal (cal.id)}
-              <div
+              <label
                 class="flex items-center gap-2 px-3 py-2 text-sm border-b border-border last:border-b-0
-                       hover:bg-muted/40"
+                       hover:bg-muted/40 cursor-pointer"
                 title={!cal.writable ? $_('calendar.settings.addGoogleReadOnly') : ''}
               >
-                <label class="flex items-center gap-2 flex-1 cursor-pointer min-w-0">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(cal.id)}
-                    onchange={() => toggleCalendar(cal.id)}
-                  />
-                  <span class="truncate flex-1">{cal.summary}</span>
-                  {#if cal.primary}
-                    <span class="text-xs text-muted-foreground">{$_('calendar.settings.addGooglePrimary')}</span>
-                  {/if}
-                  {#if !cal.writable}
-                    <span class="text-xs text-muted-foreground">{$_('calendar.settings.addGoogleReadOnlyBadge')}</span>
-                  {/if}
-                </label>
-                <label class="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                  <input
-                    type="radio"
-                    name="google-provider-default"
-                    class="accent-primary"
-                    checked={providerDefaultTempId === cal.id}
-                    disabled={!cal.writable || !selectedIds.has(cal.id)}
-                    onchange={() => { providerDefaultTempId = cal.id }}
-                  />
-                  {$_('calendar.add.defaultColumnHeader')}
-                </label>
-              </div>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(cal.id)}
+                  onchange={() => toggleCalendar(cal.id)}
+                />
+                <span class="truncate flex-1">{cal.summary}</span>
+                {#if cal.primary}
+                  <span class="text-xs text-muted-foreground">{$_('calendar.settings.addGooglePrimary')}</span>
+                {/if}
+                {#if !cal.writable}
+                  <span class="text-xs text-muted-foreground">{$_('calendar.settings.addGoogleReadOnlyBadge')}</span>
+                {/if}
+              </label>
             {/each}
           </div>
         </div>
@@ -337,17 +350,6 @@
           <Label for="source-name">{$_('calendar.settings.addGoogleSourceNameLabel')}</Label>
           <Input id="source-name" bind:value={sourceName} />
         </div>
-
-        <AddCalendarDefaultsControl
-          mode="multi"
-          sourceId={''}
-          providerLabel={sourceName || $_('calendar.add.providerLabelGoogle')}
-          candidates={calendars
-            .filter(c => selectedIds.has(c.id))
-            .map(c => ({ tempId: c.id, displayName: c.summary, writable: c.writable }))}
-          bind:providerDefaultTempId
-          bind:globalDefaultRef
-        />
       {/if}
 
       {#if errorMessage}
@@ -361,5 +363,15 @@
         {submitting ? $_('calendar.common.saving') : $_('calendar.common.save')}
       </Button>
     </Dialog.Footer>
+    {:else}
+      <CalendarColorPickStage
+        sourceId={newSourceID}
+        providerLabel={sourceName || $_('calendar.add.providerLabelGoogle')}
+        discoveredCalendars={discoveredCalendars}
+        bind:providerDefaultTempId
+        bind:globalDefaultRef
+        onDone={close}
+      />
+    {/if}
   </Dialog.Content>
 </Dialog.Root>

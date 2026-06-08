@@ -20,7 +20,7 @@
   import { toasts } from '$lib/stores/toast'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
-  import AddCalendarDefaultsControl from './AddCalendarDefaultsControl.svelte'
+  import CalendarColorPickStage from './CalendarColorPickStage.svelte'
   import { applyDefaultsAfterAdd } from '$extensions/calendar/frontend/lib/defaultsApply'
   // @ts-ignore - wailsjs bindings
   import { GetAccounts, Calendar_ListMicrosoftCalendarsForAccount, Calendar_AddMicrosoftSource, Calendar_GrantCalendarAccess } from '$wailsjs/go/app/App.js'
@@ -48,6 +48,15 @@
   let needsConsent = $state(false)
   let granting = $state(false)
 
+  // Two-stage flow mirroring AddCalDAVSourceDialog / AddGoogleCalendarDialog.
+  let stage = $state<'form' | 'colors'>('form')
+  let newSourceID = $state('')
+
+  const discoveredCalendars = $derived.by(() => {
+    if (stage !== 'colors' || newSourceID === '') return []
+    return calendarSources.calendarsBySource[newSourceID] ?? []
+  })
+
   const microsoftAccounts = $derived(
     accounts.filter((a) => (a.imapHost || '').includes('outlook')),
   )
@@ -73,6 +82,8 @@
     needsConsent = false
     providerDefaultTempId = ''
     globalDefaultRef = ''
+    stage = 'form'
+    newSourceID = ''
   }
 
   async function loadAccounts() {
@@ -190,30 +201,18 @@
       // email-shaped so this is reliable when bound.
       const boundAccount = accounts.find((a) => a.id === selectedAccountId)
       const accountEmail = boundAccount?.email ?? ''
-      const newSourceID = await Calendar_AddMicrosoftSource(
+      const sourceID = await Calendar_AddMicrosoftSource(
         selectedAccountId,
         sourceName.trim(),
         accountEmail,
         selections,
       )
       await calendarSources.load()
-      const newCals = calendarSources.calendarsBySource[newSourceID] || []
-      const added = selections.map(s => {
-        const match = newCals.find(c => c.url === s.id)
-        return {
-          id: match?.id ?? '',
-          tempId: s.id,
-          writable: s.writable,
-        }
-      }).filter(a => a.id !== '')
-      applyDefaultsAfterAdd({
-        sourceId: newSourceID,
-        added,
-        providerDefaultTempId,
-        globalDefaultRef,
-      })
       toasts.success($_('calendar.settings.addOutlookToastSuccess'))
-      close()
+      // Transition into the shared colors stage so the user can pick
+      // colors + defaults before dismissing.
+      newSourceID = sourceID
+      stage = 'colors'
     } catch (err) {
       errorMessage = $_('calendar.settings.addOutlookToastError', { values: { message: String(err) } })
     } finally {
@@ -221,14 +220,35 @@
     }
   }
 
+  // Commit the user's provider / global default picks once they dismiss
+  // the colors stage. Mirrors AddCalDAVSourceDialog's shape.
+  function finalizeDefaults() {
+    if (newSourceID === '') return
+    const added = discoveredCalendars.map(c => ({
+      id: c.id,
+      tempId: c.id,
+      writable: c.writable !== false,
+    }))
+    if (added.length === 0) return
+    applyDefaultsAfterAdd({
+      sourceId: newSourceID,
+      added,
+      providerDefaultTempId,
+      globalDefaultRef,
+    })
+  }
+
   function close() {
+    finalizeDefaults()
+    newSourceID = ''
     open = false
     onClose?.()
   }
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root bind:open onOpenChange={(v) => { if (!v) close() }}>
   <Dialog.Content class="max-w-md">
+    {#if stage === 'form'}
     <Dialog.Header>
       <Dialog.Title>{$_('calendar.settings.addOutlookTitle')}</Dialog.Title>
       <Dialog.Description>{$_('calendar.settings.addOutlookDescription')}</Dialog.Description>
@@ -288,37 +308,24 @@
               <span class="font-medium">{$_('calendar.settings.addOutlookSelectAll')}</span>
             </label>
             {#each calendars as cal (cal.id)}
-              <div
+              <label
                 class="flex items-center gap-2 px-3 py-2 text-sm border-b border-border last:border-b-0
-                       hover:bg-muted/40"
+                       hover:bg-muted/40 cursor-pointer"
                 title={!cal.writable ? $_('calendar.settings.addOutlookReadOnly') : ''}
               >
-                <label class="flex items-center gap-2 flex-1 cursor-pointer min-w-0">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(cal.id)}
-                    onchange={() => toggleCalendar(cal.id)}
-                  />
-                  <span class="truncate flex-1">{cal.name}</span>
-                  {#if cal.isDefaultCalendar}
-                    <span class="text-xs text-muted-foreground">{$_('calendar.settings.addOutlookDefault')}</span>
-                  {/if}
-                  {#if !cal.writable}
-                    <span class="text-xs text-muted-foreground">{$_('calendar.settings.addOutlookReadOnlyBadge')}</span>
-                  {/if}
-                </label>
-                <label class="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                  <input
-                    type="radio"
-                    name="ms-provider-default"
-                    class="accent-primary"
-                    checked={providerDefaultTempId === cal.id}
-                    disabled={!cal.writable || !selectedIds.has(cal.id)}
-                    onchange={() => { providerDefaultTempId = cal.id }}
-                  />
-                  {$_('calendar.add.defaultColumnHeader')}
-                </label>
-              </div>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(cal.id)}
+                  onchange={() => toggleCalendar(cal.id)}
+                />
+                <span class="truncate flex-1">{cal.name}</span>
+                {#if cal.isDefaultCalendar}
+                  <span class="text-xs text-muted-foreground">{$_('calendar.settings.addOutlookDefault')}</span>
+                {/if}
+                {#if !cal.writable}
+                  <span class="text-xs text-muted-foreground">{$_('calendar.settings.addOutlookReadOnlyBadge')}</span>
+                {/if}
+              </label>
             {/each}
           </div>
         </div>
@@ -328,17 +335,6 @@
           <Label for="ms-source-name">{$_('calendar.settings.addOutlookSourceNameLabel')}</Label>
           <Input id="ms-source-name" bind:value={sourceName} />
         </div>
-
-        <AddCalendarDefaultsControl
-          mode="multi"
-          sourceId={''}
-          providerLabel={sourceName || $_('calendar.add.providerLabelMicrosoft')}
-          candidates={calendars
-            .filter(c => selectedIds.has(c.id))
-            .map(c => ({ tempId: c.id, displayName: c.name, writable: c.writable }))}
-          bind:providerDefaultTempId
-          bind:globalDefaultRef
-        />
       {/if}
 
       {#if errorMessage}
@@ -352,5 +348,15 @@
         {submitting ? $_('calendar.common.saving') : $_('calendar.common.save')}
       </Button>
     </Dialog.Footer>
+    {:else}
+      <CalendarColorPickStage
+        sourceId={newSourceID}
+        providerLabel={sourceName || $_('calendar.add.providerLabelMicrosoft')}
+        discoveredCalendars={discoveredCalendars}
+        bind:providerDefaultTempId
+        bind:globalDefaultRef
+        onDone={close}
+      />
+    {/if}
   </Dialog.Content>
 </Dialog.Root>

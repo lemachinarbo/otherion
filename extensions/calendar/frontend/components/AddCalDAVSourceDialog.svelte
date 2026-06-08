@@ -4,12 +4,11 @@
   import { Button } from '$lib/components/ui/button'
   import { Input } from '$lib/components/ui/input'
   import { Label } from '$lib/components/ui/label'
-  import ColorPicker from '$lib/components/kit/ColorPicker.svelte'
   import Icon from '@iconify/svelte'
   import { toasts } from '$lib/stores/toast'
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
-  import AddCalendarDefaultsControl from './AddCalendarDefaultsControl.svelte'
+  import CalendarColorPickStage from './CalendarColorPickStage.svelte'
   import { applyDefaultsAfterAdd } from '$extensions/calendar/frontend/lib/defaultsApply'
 
   interface Props {
@@ -285,60 +284,14 @@
         </Button>
       </div>
     {:else}
-      <Dialog.Header>
-        <Dialog.Title>{$_('calendar.add.colorPickStage.title')}</Dialog.Title>
-        <Dialog.Description>
-          {$_('calendar.add.colorPickStage.help')}
-        </Dialog.Description>
-      </Dialog.Header>
-
-      <div class="mt-2 max-h-80 overflow-y-auto">
-        {#each discoveredCalendars as cal (cal.id)}
-          <div class="flex items-center gap-3 py-2">
-            <span
-              class="shrink-0 inline-block w-3 h-3 rounded-full"
-              style:background-color={calendarSources.colorOf(cal.id)}
-              aria-hidden="true"
-            ></span>
-            <span class="flex-1 min-w-0 truncate text-sm text-foreground">
-              {cal.displayName}
-              {#if cal.writable === false}
-                <span class="ml-1 text-xs text-muted-foreground">({$_('calendar.hooks.readOnlyBadge')})</span>
-              {/if}
-            </span>
-            <ColorPicker
-              value={cal.color ?? ''}
-              onchange={(hex) => { void calendarSources.setColor(cal.id, hex) }}
-            />
-            <label class="flex items-center gap-1 text-xs text-muted-foreground shrink-0" title={$_('calendar.add.makeProviderDefault', { values: { provider: nameInput } })}>
-              <input
-                type="radio"
-                name="cal-provider-default"
-                class="accent-primary"
-                checked={providerDefaultTempId === cal.id}
-                disabled={cal.writable === false}
-                onchange={() => { providerDefaultTempId = cal.id }}
-              />
-              {$_('calendar.add.defaultColumnHeader')}
-            </label>
-          </div>
-        {/each}
-      </div>
-
-      <AddCalendarDefaultsControl
-        mode="multi"
+      <CalendarColorPickStage
         sourceId={newSourceID}
         providerLabel={nameInput}
-        candidates={discoveredCalendars.map(c => ({ tempId: c.id, displayName: c.displayName, writable: c.writable !== false }))}
+        discoveredCalendars={discoveredCalendars}
         bind:providerDefaultTempId
         bind:globalDefaultRef
+        onDone={close}
       />
-
-      <div class="flex items-center justify-end gap-2 pt-4 border-t border-border mt-4">
-        <Button onclick={close}>
-          {$_('calendar.add.colorPickStage.done')}
-        </Button>
-      </div>
     {/if}
   </Dialog.Content>
 </Dialog.Root>
