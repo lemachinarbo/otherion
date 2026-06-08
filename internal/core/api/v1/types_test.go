@@ -65,6 +65,8 @@ func (stubContacts) ListSources() ([]ContactSource, error) {
 func (stubContacts) LinkAccountSource(string, string, int) (string, error) {
 	return "", ErrUnimplemented
 }
+func (stubContacts) SyncSource(string) error      { return ErrUnimplemented }
+func (stubContacts) SyncAllSources() error        { return ErrUnimplemented }
 func (stubContacts) SetSourceWritable(string, bool) error { return ErrUnimplemented }
 func (stubContacts) CreateContact(ContactCreateInput) (string, error) {
 	return "", ErrUnimplemented

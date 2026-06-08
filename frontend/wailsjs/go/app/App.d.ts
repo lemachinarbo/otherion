@@ -141,6 +141,10 @@ export function Contacts_ListSources():Promise<Array<v1.ContactSource>>;
 
 export function Contacts_ResizeContactPhoto(arg1:string):Promise<backend.ResizedContactPhoto>;
 
+export function Contacts_SyncAllSources():Promise<void>;
+
+export function Contacts_SyncSource(arg1:string):Promise<void>;
+
 export function Contacts_UpdateContact(arg1:string,arg2:v1.ContactPatch):Promise<void>;
 
 export function CopyToFolder(arg1:Array<string>,arg2:string):Promise<void>;

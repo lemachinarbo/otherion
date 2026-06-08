@@ -27,7 +27,24 @@ export const CONTACT_EDIT = (e: KeyboardEvent): boolean =>
 export const CONTACT_NEW = (e: KeyboardEvent): boolean =>
   e.key.toLowerCase() === 'n' && ctrlOrMeta(e) && !e.shiftKey && !e.altKey
 
+/** `Ctrl/Cmd+Shift+A` — sync every configured contact source. Mirrors
+ *  mail's Ctrl+Shift+A "sync all accounts" and calendar's
+ *  CALENDAR_SYNC_ALL — the same chord routes to whichever extension is
+ *  the active rail. */
+export const CONTACT_SYNC_ALL = (e: KeyboardEvent): boolean =>
+  e.key.toLowerCase() === 'a' && ctrlOrMeta(e) && e.shiftKey
+
+/** `Ctrl/Cmd+Shift+S` — sync the contact source the sidebar currently
+ *  has focused (resolved at dispatch time from contactsView.selectedSourceId).
+ *  Built-in entries (All / local / local:manual / local:collected) have
+ *  no remote to sync — the handler toasts a warning instead of calling
+ *  the backend. */
+export const CONTACT_SYNC_FOCUSED = (e: KeyboardEvent): boolean =>
+  e.key.toLowerCase() === 's' && ctrlOrMeta(e) && e.shiftKey
+
 export const KEY = {
   CONTACT_EDIT,
   CONTACT_NEW,
+  CONTACT_SYNC_ALL,
+  CONTACT_SYNC_FOCUSED,
 }

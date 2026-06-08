@@ -246,6 +246,14 @@ export function Contacts_ResizeContactPhoto(arg1) {
   return window['go']['app']['App']['Contacts_ResizeContactPhoto'](arg1);
 }
 
+export function Contacts_SyncAllSources() {
+  return window['go']['app']['App']['Contacts_SyncAllSources']();
+}
+
+export function Contacts_SyncSource(arg1) {
+  return window['go']['app']['App']['Contacts_SyncSource'](arg1);
+}
+
 export function Contacts_UpdateContact(arg1, arg2) {
   return window['go']['app']['App']['Contacts_UpdateContact'](arg1, arg2);
 }

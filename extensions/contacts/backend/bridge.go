@@ -296,6 +296,32 @@ func (b *ContactsBridge) Contacts_LinkAccountSource(accountID, name string, sync
 	return b.deps.Core.Contacts().LinkAccountSource(accountID, name, syncInterval)
 }
 
+// Contacts_SyncSource triggers an immediate sync against one source.
+// Used by the sidebar footer's Ctrl+Shift+S handler so the user can
+// refresh the focused address book without opening settings.
+func (b *ContactsBridge) Contacts_SyncSource(sourceID string) error {
+	if !b.gateEnabled() {
+		return errors.New("contacts: extension disabled")
+	}
+	if b.deps.Core == nil {
+		return errors.New("contacts: core not wired")
+	}
+	return b.deps.Core.Contacts().SyncSource(sourceID)
+}
+
+// Contacts_SyncAllSources triggers an immediate sync against every
+// configured contact source. Used by the sidebar footer's Ctrl+Shift+A
+// shortcut.
+func (b *ContactsBridge) Contacts_SyncAllSources() error {
+	if !b.gateEnabled() {
+		return errors.New("contacts: extension disabled")
+	}
+	if b.deps.Core == nil {
+		return errors.New("contacts: core not wired")
+	}
+	return b.deps.Core.Contacts().SyncAllSources()
+}
+
 // Contacts_UpdateContact applies a ContactPatch to a contact. Source
 // dispatch handled inside the API:
 //   - Local records → contact.Store.UpsertRecord (full-fidelity write)

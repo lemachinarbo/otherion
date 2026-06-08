@@ -30,6 +30,10 @@
     item: Snippet<[T, { active: boolean }]>
     header?: Snippet
     sectionEmpty?: Snippet<[SourceSection<T>]>
+    /** Optional sticky bottom strip — forwarded to SidebarFrame's footer
+     *  slot. Consumers typically render kit `SidebarFooter` here for the
+     *  shared sync/settings chrome. */
+    footerContent?: Snippet
     onSelect: (id: string) => void
   }
 
@@ -42,6 +46,7 @@
     item,
     header,
     sectionEmpty,
+    footerContent,
     onSelect,
   }: Props = $props()
 
@@ -145,5 +150,11 @@
         {/each}
       {/if}
     {/each}
+  {/snippet}
+
+  {#snippet footer()}
+    {#if footerContent}
+      {@render footerContent()}
+    {/if}
   {/snippet}
 </SidebarFrame>

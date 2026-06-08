@@ -13,6 +13,7 @@
   import { _ } from 'svelte-i18n'
   import Icon from '@iconify/svelte'
   import SidebarFrame from '$lib/components/kit/SidebarFrame.svelte'
+  import SidebarFooter from '$lib/components/kit/SidebarFooter.svelte'
   import AddCalendarMenu from './AddCalendarMenu.svelte'
   import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
   import { onMount, onDestroy } from 'svelte'
@@ -145,34 +146,34 @@
   {/snippet}
 
   {#snippet footer()}
-    <!-- Sync status + settings cog. SidebarFrame's footer slot pins this
-         at the bottom; we own the strip's own chrome (border-t, padding). -->
-    <div class="flex items-center justify-between gap-2 px-3 py-2 border-t border-border bg-background/40 text-xs text-muted-foreground">
-      {#if calendarSources.isAnySyncing}
-        <span class="flex items-center gap-1 min-w-0 truncate">
-          <Icon icon="mdi:sync" class="w-3 h-3 shrink-0 animate-spin" />
+    <SidebarFooter>
+      {#snippet leading()}
+        {#if calendarSources.isAnySyncing}
+          <Icon icon="mdi:sync" class="w-4 h-4 shrink-0 animate-spin" />
           <span class="truncate">{syncingLabel}</span>
-        </span>
-      {:else if currentError !== ''}
-        <span class="flex items-center gap-1 min-w-0 truncate text-destructive" title={currentError}>
-          <Icon icon="mdi:alert-circle" class="w-3 h-3 shrink-0" />
-          <span class="truncate">{$_('calendar.sidebar.syncError')}</span>
-        </span>
-      {:else}
-        <span class="flex items-center gap-1 min-w-0 truncate">
-          <Icon icon="mdi:sync" class="w-3 h-3 shrink-0" />
+        {/if}
+        {#if !calendarSources.isAnySyncing && currentError !== ''}
+          <Icon icon="mdi:alert-circle" class="w-4 h-4 shrink-0 text-destructive" />
+          <span class="truncate text-destructive" title={currentError}>
+            {$_('calendar.sidebar.syncError')}
+          </span>
+        {/if}
+        {#if !calendarSources.isAnySyncing && currentError === ''}
+          <Icon icon="mdi:sync" class="w-4 h-4 shrink-0" />
           <span class="truncate">{lastSyncedLabel}</span>
-        </span>
-      {/if}
-      <button
-        class="p-1 rounded hover:bg-muted/40 shrink-0"
-        title={$_('calendar.sidebar.settings')}
-        onclick={() => onOpenSettings?.()}
-        type="button"
-        aria-label={$_('calendar.sidebar.settings')}
-      >
-        <Icon icon="mdi:cog-outline" class="w-3.5 h-3.5" />
-      </button>
-    </div>
+        {/if}
+      {/snippet}
+      {#snippet trailing()}
+        <button
+          class="p-1 rounded hover:bg-muted/40"
+          title={$_('calendar.sidebar.settings')}
+          onclick={() => onOpenSettings?.()}
+          type="button"
+          aria-label={$_('calendar.sidebar.settings')}
+        >
+          <Icon icon="mdi:cog-outline" class="w-4 h-4" />
+        </button>
+      {/snippet}
+    </SidebarFooter>
   {/snippet}
 </SidebarFrame>

@@ -177,6 +177,18 @@ type Contacts interface {
 	// default. Errors with ErrAccountNotFound when the account doesn't exist.
 	LinkAccountSource(accountID, name string, syncInterval int) (string, error)
 
+	// SyncSource triggers an immediate sync against the given source.
+	// Returns when the sync finishes; per-source failures are reported
+	// via the returned error. Used by the contacts extension's sidebar
+	// footer Ctrl+Shift+S handler.
+	SyncSource(sourceID string) error
+
+	// SyncAllSources triggers an immediate sync against every configured
+	// contact source. Per-source failures don't abort the loop; the
+	// returned error wraps any individual failures. Used by the contacts
+	// extension's Ctrl+Shift+A shortcut.
+	SyncAllSources() error
+
 	// SetSourceWritable flips the writable flag on a contact source. Used
 	// by the incremental-consent flow (Phase 2b.3) after the user grants
 	// write scopes for an OAuth source. CardDAV sources also use it via

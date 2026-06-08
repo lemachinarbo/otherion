@@ -16,7 +16,10 @@
       "localManual": "Local - Contacts",
       "localCollected": "Local - Collected",
       "sourcesHeading": "Sources",
-      "noSources": "No CardDAV sources configured."
+      "noSources": "No CardDAV sources configured.",
+      "syncing": "Syncing contacts…",
+      "idle": "Contacts",
+      "settings": "Contact settings"
     },
     "list": {
       "header": "Contacts",
@@ -159,7 +162,10 @@
       "failedUpdate": "Failed to update contact.",
       "emailCopied": "Copied {email}",
       "emailCopyFailed": "Failed to copy email.",
-      "photoFailed": "Could not process that image. Try a different file."
+      "photoFailed": "Could not process that image. Try a different file.",
+      "syncSucceeded": "Contacts synced",
+      "syncAllSucceeded": "All contact sources synced",
+      "syncNoSource": "Select a CardDAV source in the sidebar first."
     }
   }
 }

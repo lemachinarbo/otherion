@@ -237,8 +237,8 @@
         <ul>
           <li>Prepared CardDav infra for extensibility</li>
           <li>Added Extension infrastructure</li>
-          <li>Added Contacts extension - shipped disabled</li>
-          <li>Added Calendar extension - shipped disabled</li>
+          <li>ALPHA: Added Contacts extension - shipped disabled</li>
+          <li>ALPHA: Added Calendar extension - shipped disabled</li>
           <li>Added fallback for Mailfence and other non-quote-compliant providers - #209</li>
           <li>Fixed CardDav remove provider code path to not leave orphaned contacts in db</li>
         </ul>

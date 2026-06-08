@@ -6,6 +6,7 @@
   import ContactDetail from './ContactDetail.svelte'
   import AddContactDialog from './AddContactDialog.svelte'
   import ContactEditDialog from './ContactEditDialog.svelte'
+  import ContactsSettingsDialog from './ContactsSettingsDialog.svelte'
   import PaneLayout from '$lib/components/kit/PaneLayout.svelte'
   import { contactsView, reloadContacts, selectSource, activateContact } from '$extensions/contacts/frontend/stores/contactsView.svelte'
   import { contactSourcesStore } from '$extensions/contacts/frontend/stores/contactSources.svelte'
@@ -39,6 +40,10 @@
   })
 
   let showAdd = $state(false)
+
+  // Settings dialog hoisted here so the sidebar's footer cog has a single
+  // owner to flip — same pattern CalendarPane uses for its settings dialog.
+  let showSettings = $state(false)
 
   // Edit-dialog state is hoisted to the pane so the 'e' keyboard shortcut and
   // ContactDetail's Edit button both route through one owner.
@@ -90,15 +95,60 @@
   const unregNew = registerExtensionShortcut('contacts', KEY.CONTACT_NEW, () => {
     showAdd = true
   })
+
+  // Ctrl/Cmd+Shift+A: sync every configured contact source. Same chord
+  // as mail's "sync all accounts" — extension dispatch routes only when
+  // contacts is the active rail.
+  const unregSyncAll = registerExtensionShortcut('contacts', KEY.CONTACT_SYNC_ALL, () => {
+    void runSyncAll()
+  })
+
+  // Ctrl/Cmd+Shift+S: sync the focused source. selectedSourceId points
+  // at a CardDAV/OAuth source UUID for real entries; '' / 'local' /
+  // 'local:manual' / 'local:collected' are built-in slices with no
+  // remote to sync — the handler skips those and toasts.
+  const unregSyncFocused = registerExtensionShortcut('contacts', KEY.CONTACT_SYNC_FOCUSED, () => {
+    void runSyncFocused()
+  })
+
+  async function runSyncAll() {
+    try {
+      await contactSourcesStore.syncAll()
+      toasts.success($_('contacts.toast.syncAllSucceeded'))
+    } catch (err) {
+      const msg = (err as Error)?.message ?? String(err)
+      toasts.error(msg)
+    }
+  }
+
+  async function runSyncFocused() {
+    const id = contactsView.selectedSourceId
+    const isBuiltin = id === '' || id === 'local' || id.startsWith('local:')
+    if (isBuiltin) {
+      toasts.warning($_('contacts.toast.syncNoSource'))
+      return
+    }
+    try {
+      await contactSourcesStore.syncSource(id)
+      toasts.success($_('contacts.toast.syncSucceeded'))
+    } catch (err) {
+      const msg = (err as Error)?.message ?? String(err)
+      toasts.error(msg)
+    }
+  }
+
   onDestroy(unregEdit)
   onDestroy(unregNew)
+  onDestroy(unregSyncAll)
+  onDestroy(unregSyncFocused)
 </script>
 
 <PaneLayout>
-  <ContactsSidebar onSelect={handleSourceSelected} />
+  <ContactsSidebar onSelect={handleSourceSelected} onOpenSettings={() => { showSettings = true }} />
   <ContactList onAdd={openAdd} />
   <ContactDetail onEdit={openEdit} />
 </PaneLayout>
 
 <AddContactDialog bind:open={showAdd} onCreated={handleCreated} />
 <ContactEditDialog bind:open={showEdit} contact={editTarget} />
+<ContactsSettingsDialog bind:open={showSettings} />

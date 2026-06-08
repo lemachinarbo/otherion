@@ -157,6 +157,20 @@ func (c contactsCoreImpl) LinkAccountSource(accountID, name string, syncInterval
 	return source.ID, nil
 }
 
+// SyncSource delegates to the host's existing SyncContactSource. Used by
+// the contacts extension's Ctrl+Shift+S handler and per-source "Sync now"
+// affordances.
+func (c contactsCoreImpl) SyncSource(sourceID string) error {
+	return c.app.SyncContactSource(sourceID)
+}
+
+// SyncAllSources delegates to the host's existing SyncAllContactSources.
+// Used by the contacts extension's Ctrl+Shift+A shortcut and bulk-sync
+// affordances.
+func (c contactsCoreImpl) SyncAllSources() error {
+	return c.app.SyncAllContactSources()
+}
+
 func (contactsCoreImpl) CreateContact(coreapi.ContactCreateInput) (string, error) {
 	return "", coreapi.ErrUnimplemented
 }
