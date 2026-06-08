@@ -225,6 +225,25 @@ func (a *App) SyncAllContactSources() error {
 	return a.carddavSyncer.SyncAllSources()
 }
 
+// ForceSyncContactSource clears the per-addressbook sync tokens for a
+// CardDAV source so the next sync re-fetches every vCard from the
+// server. Used to backfill multi-field data (phones, addresses, org,
+// notes, etc.) for contacts originally synced under a legacy schema
+// where the old parser only stored email + display name. Mirrors
+// App.ForceSyncFolder for mail messages.
+func (a *App) ForceSyncContactSource(sourceID string) error {
+	abs, err := a.carddavStore.ListAddressbooks(sourceID)
+	if err != nil {
+		return fmt.Errorf("failed to list addressbooks: %w", err)
+	}
+	for _, ab := range abs {
+		if err := a.carddavStore.UpdateAddressbookSyncToken(ab.ID, ""); err != nil {
+			return fmt.Errorf("failed to clear sync token for addressbook %s: %w", ab.ID, err)
+		}
+	}
+	return a.carddavSyncer.SyncSource(sourceID)
+}
+
 // GetContactSourceErrors returns all sources that have errors
 func (a *App) GetContactSourceErrors() ([]*carddav.SourceError, error) {
 	return a.carddavStore.GetSourcesWithErrors()

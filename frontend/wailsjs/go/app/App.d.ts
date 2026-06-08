@@ -185,6 +185,8 @@ export function FetchServerMessage(arg1:string,arg2:string,arg3:number):Promise<
 
 export function FindLocalMessageIDs(arg1:string,arg2:string,arg3:Array<string>):Promise<Array<string>>;
 
+export function ForceSyncContactSource(arg1:string):Promise<void>;
+
 export function ForceSyncFolder(arg1:string,arg2:string):Promise<void>;
 
 export function GetAccentBarUnread():Promise<boolean>;

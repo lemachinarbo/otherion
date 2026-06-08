@@ -8,6 +8,7 @@
 - Added Extension infrastructure
 - ALPHA: Added Contacts extension - shipped disabled
 - ALPHA: Added Calendar extension - shipped disabled
+- Added force re-sync of contacts
 - Added fallback for Mailfence and other non-quote-compliant providers - [#209](https://github.com/hkdb/aerion/issues/209)
 - Fixed CardDav remove provider code path to not leave orphaned contacts in db
 - Fixed Sent/Draft folder message listing - [#227](https://github.com/hkdb/aerion/issues/227)

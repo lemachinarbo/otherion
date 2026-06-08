@@ -334,6 +334,10 @@ export function FindLocalMessageIDs(arg1, arg2, arg3) {
   return window['go']['app']['App']['FindLocalMessageIDs'](arg1, arg2, arg3);
 }
 
+export function ForceSyncContactSource(arg1) {
+  return window['go']['app']['App']['ForceSyncContactSource'](arg1);
+}
+
 export function ForceSyncFolder(arg1, arg2) {
   return window['go']['app']['App']['ForceSyncFolder'](arg1, arg2);
 }

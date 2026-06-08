@@ -5,6 +5,7 @@ import {
   GetContactSourceErrors,
   SyncContactSource,
   SyncAllContactSources,
+  ForceSyncContactSource,
   DeleteContactSource,
   GetLinkedAccountsForContactSync,
   LinkAccountContactSource,
@@ -50,6 +51,21 @@ function createContactSourcesStore() {
       await load()
     } catch (err) {
       console.error('Failed to sync contact source:', err)
+      throw err
+    }
+  }
+
+  // forceSyncSource clears the per-addressbook sync tokens on the
+  // backend so the next sync returns every vCard from the server. Used
+  // to backfill multi-field data (phone, address, org, notes, etc.) for
+  // contacts originally synced under the legacy v0.2.x schema where the
+  // old parser only stored email + display name.
+  async function forceSyncSource(sourceId: string) {
+    try {
+      await ForceSyncContactSource(sourceId)
+      await load()
+    } catch (err) {
+      console.error('Failed to force-sync contact source:', err)
       throw err
     }
   }
@@ -142,6 +158,7 @@ function createContactSourcesStore() {
     load,
     refresh,
     syncSource,
+    forceSyncSource,
     syncAll,
     deleteSource,
     getLinkedAccounts,
