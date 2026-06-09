@@ -167,7 +167,7 @@
 
     // Listen for message changes from backend
     cleanupFunctions.push(
-      EventsOn('messages:flagsChanged', (data: { messageIds: string[], isRead: boolean }) => {
+      EventsOn('messages:readChanged', (data: { messageIds: string[], isRead: boolean }) => {
         // Check if this is our own mark-as-read operation
         const isOwnOperation = data.messageIds.every(id => pendingMarkAsReadIds.has(id))
 

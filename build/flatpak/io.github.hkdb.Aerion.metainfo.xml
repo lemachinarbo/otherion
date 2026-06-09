@@ -248,6 +248,7 @@
           <li>Fixed Sent/Draft folder message listing - #227</li>
           <li>Fixed unified inbox actions - #234</li>
           <li>Fixed Microsoft admin pre-approved oauth - #29</li>
+          <li>Fixed read/star polluting undo - #243</li>
         </ul>
       </description>
     </release>

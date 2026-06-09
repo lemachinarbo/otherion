@@ -116,7 +116,7 @@ func (a *App) setReadStatus(messageIDs []string, isRead bool) error {
 	}
 
 	// Emit event for UI update with flag state
-	wailsRuntime.EventsEmit(a.ctx, "messages:flagsChanged", map[string]interface{}{
+	wailsRuntime.EventsEmit(a.ctx, "messages:readChanged", map[string]interface{}{
 		"messageIds": messageIDs,
 		"isRead":     isRead,
 	})
@@ -166,33 +166,14 @@ func (a *App) setReadStatus(messageIDs []string, isRead bool) error {
 		}
 	}()
 
-	// Create undo command
-	firstMsg := messages[0]
-	folderObj, _ := a.folderStore.Get(firstMsg.FolderID)
-	if folderObj != nil {
-		uids := make([]uint32, len(messages))
-		for i, m := range messages {
-			uids[i] = m.UID
-		}
-
-		description := "Mark as read"
-		if !isRead {
-			description = "Mark as unread"
-		}
-
-		cmd := undo.NewFlagChangeCommand(
-			a.ctx,
-			a,
-			firstMsg.AccountID,
-			folderObj.Path,
-			messageIDs,
-			uids,
-			"read",
-			!isRead, // previous state was opposite
-			description,
-		)
-		a.undoStack.Push(cmd)
-	}
+	// Read-flag changes are intentionally NOT pushed onto the undo stack.
+	// The original design treated every mark-read/unread as undoable, but
+	// in practice the auto-mark-as-read timer (and bulk operations) flooded
+	// the stack so Cmd+Z routinely undid a background read flip instead of
+	// the user's last real action (archive / move / trash). The cure is
+	// simpler than per-call-site filtering: just don't make read changes
+	// undoable at all — the user can re-flip manually if they need to.
+	// Closes #243.
 
 	return nil
 }
@@ -233,7 +214,10 @@ func (a *App) setStarredStatus(messageIDs []string, isStarred bool) error {
 		return fmt.Errorf("failed to update local flags: %w", err)
 	}
 
-	wailsRuntime.EventsEmit(a.ctx, "messages:flagsChanged", messageIDs)
+	wailsRuntime.EventsEmit(a.ctx, "messages:starredChanged", map[string]interface{}{
+		"messageIds": messageIDs,
+		"isStarred":  isStarred,
+	})
 
 	// Sync to IMAP in background with retry
 	go func() {
@@ -254,33 +238,10 @@ func (a *App) setStarredStatus(messageIDs []string, isStarred bool) error {
 		}
 	}()
 
-	// Create undo command
-	firstMsg := messages[0]
-	folderObj, _ := a.folderStore.Get(firstMsg.FolderID)
-	if folderObj != nil {
-		uids := make([]uint32, len(messages))
-		for i, m := range messages {
-			uids[i] = m.UID
-		}
-
-		description := "Star"
-		if !isStarred {
-			description = "Unstar"
-		}
-
-		cmd := undo.NewFlagChangeCommand(
-			a.ctx,
-			a,
-			firstMsg.AccountID,
-			folderObj.Path,
-			messageIDs,
-			uids,
-			"starred",
-			!isStarred,
-			description,
-		)
-		a.undoStack.Push(cmd)
-	}
+	// Star changes are intentionally NOT pushed onto the undo stack. Same
+	// rationale as setReadStatus: the cost of stack pollution outweighs
+	// the value of undo for a flag flip that the user can trivially
+	// reverse with another star/unstar click. Closes #243.
 
 	return nil
 }
