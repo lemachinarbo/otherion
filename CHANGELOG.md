@@ -20,6 +20,7 @@
 - Fixed read/star polluting undo - [#243](https://github.com/hkdb/aerion/issues/243)
 - Fixed duplicate unified inbox freeze - [#241](https://github.com/hkdb/aerion/issues/241)
 - Fixed unparsible body fetch handling - [#240](https://github.com/hkdb/aerion/issues/240)
+- Added incremental flag sync - [#240](https://github.com/hkdb/aerion/issues/240)
 
 
 **v0.2.5 - 05-27-2026**
