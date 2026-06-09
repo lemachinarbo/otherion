@@ -1,21 +1,26 @@
--- Aerion: rollback the v0.3.0 schema (migrations 31 + 32 + 33 + 34 + 35 + 36) back to v0.2.5 (v30).
+-- Aerion: rollback the v0.3.0 schema (migrations 31 + 32 + 33 + 34 + 35 + 36 + 37 + 38) back to v0.2.5 (v30).
 --
 -- This script reconstructs the v30 schema (`contacts` + `carddav_contacts` tables)
--- from the v36 schema (`contact_records` + `contact_emails` + sidecars +
--- `extension_secrets` + per-slot oauth_tokens encrypted fallback columns) via
--- JOINs + DROPs / DROP COLUMNs. No external backup file is needed — the unified
--- schema IS the data; the old shape is just a denormalized projection of it.
+-- from the v38 schema (`contact_records` + `contact_emails` + sidecars +
+-- `extension_secrets` + per-slot oauth_tokens encrypted fallback columns +
+-- per-account no_outgoing_server / smtp_username / encrypted_smtp_password +
+-- reply_forward_identity_id columns) via JOINs + DROPs / DROP COLUMNs. No
+-- external backup file is needed — the unified schema IS the data; the old
+-- shape is just a denormalized projection of it.
 --
 -- Aerion versions and the schemas they ship with:
 --   - v0.2.5 (last released) → schema v30 (separate `contacts`, `carddav_contacts`)
---   - v0.3.0 (upcoming)      → schema v36 (unified contact_records + UUID identity
+--   - v0.3.0 (upcoming)      → schema v38 (unified contact_records + UUID identity
 --                                          + carddav_record_state.addressbook_id FK
 --                                          + PHOTO columns + extension_secrets
---                                          + per-slot oauth_tokens encrypted fallback)
+--                                          + per-slot oauth_tokens encrypted fallback
+--                                          + per-account no-outgoing-server +
+--                                            separate SMTP credential columns
+--                                          + reply/forward-with identity preference)
 --
--- v31, v32, v33, v34, v35 were intermediate development schemas that never shipped —
--- no real-world DB will ever be at any of them alone. The only rollback path
--- that matters is v36 → v30 (the released-to-released transition).
+-- v31, v32, v33, v34, v35, v36, v37 were intermediate development schemas that
+-- never shipped — no real-world DB will ever be at any of them alone. The only
+-- rollback path that matters is v38 → v30 (the released-to-released transition).
 --
 -- Migrations bundled into the 0.3.0 cumulative jump:
 --   - 31: unified contact_records + multi-field sub-tables; replaced legacy
@@ -42,6 +47,23 @@
 --     (where client_config_id != 'google-mail' / 'microsoft-mail') are also
 --     deleted, because v0.2.5's OAuth code doesn't understand them and would
 --     pick one of them at random when looking up the account's provider.
+--   - 37: per-account "No outgoing server" toggle + separate SMTP credentials.
+--     Adds no_outgoing_server (INTEGER, default 0), smtp_username (TEXT,
+--     default ''), and encrypted_smtp_password (TEXT, nullable) columns to
+--     the accounts table. Rolling back drops the three columns. Any account
+--     marked receive-only in v0.3.0 will be sendable again under v0.2.5 if
+--     its smtp_host is still configured; if smtp_host was left blank, v0.2.5
+--     will surface an SMTP error at send time. Separate-SMTP-credential
+--     keyring entries (keyed as "<accountID>:smtp") are NOT cleared by this
+--     SQL — remove them via the OS keyring manager if you want a clean
+--     state. v0.2.5 ignores those entries entirely.
+--   - 38: per-account "Reply/Forward with" identity preference for receive-only
+--     accounts. Adds reply_forward_identity_id (TEXT, default '') to the
+--     accounts table. Only meaningful when no_outgoing_server = 1; sendable
+--     accounts use their own identities directly. Rolling back drops the
+--     column. Since v0.2.5 has no concept of receive-only accounts (those
+--     are the v37 feature this preference depends on), the dropped value
+--     wouldn't have applied under v0.2.5 anyway.
 --
 -- Inherent data loss on rollback:
 --   - Multi-field data (phones, addresses, URLs, IMPPs, org, title, note, bday,
@@ -66,7 +88,7 @@
 --      (or whatever your DB path is — `~/Library/Application Support/Aerion/`
 --       on macOS, `%LOCALAPPDATA%\aerion\` on Windows).
 --   3. Run this script against your DB:
---        sqlite3 ~/.local/share/aerion/aerion.db < rollback-v36-to-v30.sql
+--        sqlite3 ~/.local/share/aerion/aerion.db < rollback-v38-to-v30.sql
 --   4. Launch the older Aerion (v0.2.5). It should start normally and your
 --      contacts autocomplete should work.
 --
@@ -178,10 +200,30 @@ DELETE FROM oauth_tokens
 ALTER TABLE oauth_tokens DROP COLUMN encrypted_access_token;
 ALTER TABLE oauth_tokens DROP COLUMN encrypted_refresh_token;
 
--- 8. Roll back the migration tracker so older Aerion doesn't think v31/v32/
---    v33/v34/v35/v36 have been applied. After this, older Aerion sees
---    schema_version=30 and starts normally. The `>= 31` bound catches all
---    v0.3.0 migrations plus any future intermediate schemas.
+-- 8. Roll back v37's per-account "No outgoing server" + separate SMTP
+--    credentials columns. Same DROP COLUMN caveat as step 7b — needs SQLite
+--    >= 3.35. The columns being present is harmless to v0.2.5 (it ignores
+--    unknown columns), but leaving them in place will cause v37's ADD COLUMN
+--    to fail on the next upgrade. Separate-SMTP keyring entries (keyed as
+--    "<accountID>:smtp") are NOT cleared by this SQL — clear them via the
+--    OS keyring manager if desired. v0.2.5 doesn't look at them, so the
+--    orphaned entries are inert until you upgrade again.
+ALTER TABLE accounts DROP COLUMN no_outgoing_server;
+ALTER TABLE accounts DROP COLUMN smtp_username;
+ALTER TABLE accounts DROP COLUMN encrypted_smtp_password;
+
+-- 9. Roll back v38's "Reply/Forward with" identity preference column. Same
+--    DROP COLUMN caveat as step 7b — needs SQLite >= 3.35. The column being
+--    present is harmless to v0.2.5 (it ignores unknown columns), but
+--    leaving it in place will cause v38's ADD COLUMN to fail on the next
+--    upgrade. No keyring or external state to clean up — the column is a
+--    pure FK reference to identities.id.
+ALTER TABLE accounts DROP COLUMN reply_forward_identity_id;
+
+-- 10. Roll back the migration tracker so older Aerion doesn't think v31/v32/
+--     v33/v34/v35/v36/v37/v38 have been applied. After this, older Aerion sees
+--     schema_version=30 and starts normally. The `>= 31` bound catches all
+--     v0.3.0 migrations plus any future intermediate schemas.
 DELETE FROM migrations WHERE version >= 31;
 
 COMMIT;

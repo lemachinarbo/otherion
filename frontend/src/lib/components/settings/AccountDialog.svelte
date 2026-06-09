@@ -20,9 +20,9 @@
   import { dialogGuardOpen, dialogGuardClose } from '$lib/stores/dialogGuard'
   import { _ } from '$lib/i18n'
   // @ts-ignore - wailsjs path
-  import { account } from '../../../../wailsjs/go/models'
+  import { account, app } from '../../../../wailsjs/go/models'
   // @ts-ignore - wailsjs path
-  import { GetIdentities } from '../../../../wailsjs/go/app/App'
+  import { GetIdentities, GetAllAccountIdentities } from '../../../../wailsjs/go/app/App'
 
   interface Props {
     /** Whether the dialog is open */
@@ -58,6 +58,11 @@
   let smtpHost = $state('')
   let smtpPort = $state(587)
   let smtpSecurity = $state('starttls')
+  let noOutgoingServer = $state(false)
+  let smtpUsername = $state('')
+  let smtpPassword = $state('')
+  let replyForwardIdentityID = $state('')
+  let allIdentityGroups = $state<app.AccountIdentityGroup[]>([])
   let syncPeriodDays = $state('180')
   let syncInterval = $state('30')
   let syncAllFolders = $state(false)
@@ -103,6 +108,11 @@
       smtpHost = editAccount.smtpHost
       smtpPort = editAccount.smtpPort
       smtpSecurity = editAccount.smtpSecurity
+      noOutgoingServer = editAccount.noOutgoingServer || false
+      smtpUsername = editAccount.smtpUsername || ''
+      smtpPassword = ''  // never echo a stored password back; blank means "keep existing"
+      replyForwardIdentityID = editAccount.replyForwardIdentityId || ''
+      loadAllIdentityGroups()
       syncPeriodDays = String(editAccount.syncPeriodDays)
       syncInterval = String(editAccount.syncInterval ?? 30)
       syncAllFolders = editAccount.syncAllFolders || false
@@ -131,6 +141,8 @@
       initialized = false
       errors = {}
       password = ''
+      smtpPassword = ''
+      allIdentityGroups = []
     }
   })
 
@@ -155,6 +167,23 @@
       console.error('Failed to load display name:', err)
     }
   }
+
+  async function loadAllIdentityGroups() {
+    try {
+      allIdentityGroups = (await GetAllAccountIdentities()) || []
+    } catch (err) {
+      console.error('Failed to load identity groups for Reply/Forward-with picker:', err)
+      allIdentityGroups = []
+    }
+  }
+
+  // Sendable identity-group candidates for the Reply/Forward-with picker:
+  // exclude the account being edited (its own identities can't reply on
+  // its behalf when it's marked no-outgoing) and any other no-outgoing
+  // accounts (their identities aren't sendable either).
+  const availableIdentityGroups = $derived(
+    allIdentityGroups.filter(g => g.account?.id !== editAccount?.id && !g.account?.noOutgoingServer)
+  )
 
   function validate(): boolean {
     errors = {}
@@ -187,6 +216,10 @@
         smtpHost,
         smtpPort,
         smtpSecurity,
+        noOutgoingServer,
+        smtpUsername,
+        smtpPassword, // Empty = keep current (when SMTPUsername unchanged) or skip (when toggle is on)
+        replyForwardIdentityId: replyForwardIdentityID,
         authType,
         syncPeriodDays: Number(syncPeriodDays),
         syncInterval: Number(syncInterval),
@@ -373,7 +406,7 @@
           </Tabs.Trigger>
         </Tabs.List>
 
-        <div class="flex-1 overflow-y-auto mt-4 pr-2" style="max-height: calc(90vh - 220px);">
+        <div class="flex-1 overflow-y-auto mt-4 pl-1 pr-3" style="max-height: calc(90vh - 220px);">
           <Tabs.Content value="general" class="mt-0">
             <AccountGeneralTab
               {editAccount}
@@ -415,6 +448,12 @@
               bind:smtpHost
               bind:smtpPort
               bind:smtpSecurity
+              bind:noOutgoingServer
+              bind:smtpUsername
+              bind:smtpPassword
+              bind:replyForwardIdentityID
+              {availableIdentityGroups}
+              isGenericProvider={(editAccount?.imapHost ?? '') !== '' && !['gmail.com', 'googlemail.com', 'outlook.com', 'office365.com', 'yahoo.com', 'aol.com', 'icloud.com', 'me.com', 'mac.com'].some(h => (editAccount?.imapHost ?? '').includes(h))}
               bind:syncInterval
               bind:readReceiptRequestPolicy
               bind:sentFolderPath
@@ -431,6 +470,10 @@
               onSmtpHostChange={(v) => smtpHost = v}
               onSmtpPortChange={(v) => smtpPort = v}
               onSmtpSecurityChange={(v) => smtpSecurity = v}
+              onNoOutgoingServerChange={(v) => noOutgoingServer = v}
+              onSmtpUsernameChange={(v) => smtpUsername = v}
+              onSmtpPasswordChange={(v) => smtpPassword = v}
+              onReplyForwardIdentityIDChange={(v) => replyForwardIdentityID = v}
               onSyncIntervalChange={(v) => syncInterval = v}
               onReadReceiptPolicyChange={(v) => readReceiptRequestPolicy = v}
               bind:syncAllFolders
@@ -475,7 +518,7 @@
       </Tabs.Root>
     {:else if hookAccount && pendingHooks.length > 0}
       <!-- Post-Add Mode: Account-Setup Hooks -->
-      <div class="flex-1 overflow-y-auto pr-2 pb-4" style="max-height: calc(90vh - 140px);">
+      <div class="flex-1 overflow-y-auto pl-1 pr-3 pb-4" style="max-height: calc(90vh - 140px);">
         <p class="text-sm text-muted-foreground mb-3">
           Your account is added. Set up extras for this account, or skip.
         </p>
@@ -515,7 +558,7 @@
       </div>
     {:else}
       <!-- New Account Mode: Wizard -->
-      <div class="flex-1 overflow-y-auto pr-2 pb-4" style="max-height: calc(90vh - 140px);">
+      <div class="flex-1 overflow-y-auto pl-1 pr-3 pb-4" style="max-height: calc(90vh - 140px);">
         <AccountForm
           {editAccount}
           onSubmit={handleSubmit}

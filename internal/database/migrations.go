@@ -1239,4 +1239,42 @@ var migrations = []Migration{
 			ALTER TABLE oauth_tokens ADD COLUMN encrypted_refresh_token TEXT;
 		`,
 	},
+	{
+		Version: 37,
+		SQL: `
+			-- v0.3.0: "No outgoing server" + separate SMTP credentials.
+			--
+			-- no_outgoing_server: marks the account as receive-only. SMTP
+			-- host/port/security are ignored when set; the composer hides
+			-- the account (and all its identities) from the From dropdown.
+			--
+			-- smtp_username: SMTP-specific username when the user supplies
+			-- separate SMTP credentials. Empty (the default for every
+			-- pre-v0.3.0 row) preserves legacy behavior — SMTP reuses the
+			-- account's Username + IMAP keyring password. Non-empty signals
+			-- the SMTP send path to use this username + a separately-stored
+			-- password keyed at "<accountID>:smtp" in the keyring.
+
+			ALTER TABLE accounts ADD COLUMN no_outgoing_server INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE accounts ADD COLUMN smtp_username TEXT NOT NULL DEFAULT '';
+			-- Encrypted-DB fallback for the SMTP-specific password when the
+			-- keyring is unavailable. Mirrors encrypted_password's role for
+			-- IMAP. Only consulted when smtp_username != ''.
+			ALTER TABLE accounts ADD COLUMN encrypted_smtp_password TEXT;
+		`,
+	},
+	{
+		Version: 38,
+		SQL: `
+			-- v0.3.0: "Reply/Forward with" identity preference for receive-only
+			-- accounts. Stores the identity ID to pre-select in the composer
+			-- when replying or forwarding a message received via a
+			-- no_outgoing_server account. Empty (the default) falls back to
+			-- the user's default sending account, then to the first available
+			-- identity. Only consulted when no_outgoing_server = 1; sendable
+			-- accounts use their own identities directly.
+
+			ALTER TABLE accounts ADD COLUMN reply_forward_identity_id TEXT NOT NULL DEFAULT '';
+		`,
+	},
 }

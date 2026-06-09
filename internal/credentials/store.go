@@ -162,8 +162,101 @@ func (s *Store) clearDBPassword(accountID string) {
 // DeleteAllCredentials removes all credentials for an account
 func (s *Store) DeleteAllCredentials(accountID string) error {
 	_ = s.DeletePassword(accountID)
+	_ = s.DeleteSMTPPassword(accountID)
 	_ = s.DeleteOAuthTokens(accountID)
 	return nil
+}
+
+// smtpPasswordKeyringKey returns the keyring slot used for the
+// SMTP-specific password (only relevant when Account.SMTPUsername is set).
+// Keeps the IMAP credential under accountID alone, so legacy entries are
+// untouched by this addition.
+func smtpPasswordKeyringKey(accountID string) string {
+	return accountID + ":smtp"
+}
+
+// SetSMTPPassword stores the SMTP-specific password for an account. Used
+// only when the account has a non-empty SMTPUsername (separate creds).
+// Empty input is a no-op so the UI can submit a blank field on Update to
+// mean "keep what's already there."
+func (s *Store) SetSMTPPassword(accountID, password string) error {
+	if password == "" {
+		return nil
+	}
+
+	if s.keyringEnabled {
+		err := gokeyring.Set(serviceName, smtpPasswordKeyringKey(accountID), password)
+		if err == nil {
+			s.log.Debug().Str("account_id", accountID).Msg("SMTP password stored in OS keyring")
+			s.clearDBSMTPPassword(accountID)
+			return nil
+		}
+		s.log.Warn().Err(err).Msg("Failed to store SMTP password in OS keyring, using fallback")
+	}
+
+	encrypted, err := s.encryptor.Encrypt(password)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt SMTP password: %w", err)
+	}
+	if _, err := s.db.Exec(
+		"UPDATE accounts SET encrypted_smtp_password = ? WHERE id = ?",
+		encrypted, accountID,
+	); err != nil {
+		return fmt.Errorf("failed to store encrypted SMTP password: %w", err)
+	}
+	s.log.Debug().Str("account_id", accountID).Msg("SMTP password stored in encrypted database")
+	return nil
+}
+
+// GetSMTPPassword retrieves the SMTP-specific password for an account.
+// Mirrors GetPassword's keyring-first + DB-fallback shape, but uses the
+// separate "<accountID>:smtp" keyring slot and the
+// encrypted_smtp_password column.
+func (s *Store) GetSMTPPassword(accountID string) (string, error) {
+	if s.keyringEnabled {
+		password, err := gokeyring.Get(serviceName, smtpPasswordKeyringKey(accountID))
+		if err == nil {
+			return password, nil
+		}
+		if err != gokeyring.ErrNotFound {
+			s.log.Warn().Err(err).Msg("Error reading SMTP password from OS keyring, trying fallback")
+		}
+	}
+
+	var encrypted sql.NullString
+	err := s.db.QueryRow(
+		"SELECT encrypted_smtp_password FROM accounts WHERE id = ?",
+		accountID,
+	).Scan(&encrypted)
+	if err == sql.ErrNoRows {
+		return "", ErrCredentialNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to query SMTP password: %w", err)
+	}
+	if !encrypted.Valid || encrypted.String == "" {
+		return "", ErrCredentialNotFound
+	}
+	password, err := s.encryptor.Decrypt(encrypted.String)
+	if err != nil {
+		return "", fmt.Errorf("failed to decrypt SMTP password: %w", err)
+	}
+	return password, nil
+}
+
+// DeleteSMTPPassword removes the SMTP-specific password for an account.
+// Idempotent.
+func (s *Store) DeleteSMTPPassword(accountID string) error {
+	if s.keyringEnabled {
+		_ = gokeyring.Delete(serviceName, smtpPasswordKeyringKey(accountID))
+	}
+	s.clearDBSMTPPassword(accountID)
+	return nil
+}
+
+// clearDBSMTPPassword clears the encrypted SMTP password from the database.
+func (s *Store) clearDBSMTPPassword(accountID string) {
+	_, _ = s.db.Exec("UPDATE accounts SET encrypted_smtp_password = NULL WHERE id = ?", accountID)
 }
 
 // IsKeyringEnabled returns whether the OS keyring is being used

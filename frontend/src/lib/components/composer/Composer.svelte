@@ -706,21 +706,40 @@
   onMount(async () => {
     // Load identities — try cross-account first (main window), fall back to single-account (detached)
     try {
+      // When replying or forwarding on a no-outgoing account, honor that
+      // account's configured Reply/Forward-with identity (if any). Captured
+      // from the pre-filter list because no-outgoing accounts are removed
+      // before the picker sees them.
+      let replyForwardIdentity: account.Identity | null = null
+
       if (api.getAllAccountIdentities) {
         const groups = await api.getAllAccountIdentities()
-        allGroups = groups || []
+        const sourceGroup = (groups || []).find(g => g.account?.id === accountId)
+        // Exclude receive-only accounts: their identities can't actually
+        // be used as a From address, so they don't belong in the picker.
+        allGroups = (groups || []).filter(g => !g.account?.noOutgoingServer)
         identities = allGroups.flatMap(g => g.identities || [])
+
+        const sourceReplyForwardId = sourceGroup?.account?.noOutgoingServer
+          ? ((sourceGroup.account as any).replyForwardIdentityId || '')
+          : ''
+        if (sourceReplyForwardId) {
+          replyForwardIdentity = identities.find(i => i.id === sourceReplyForwardId) || null
+        }
       }
       if (!api.getAllAccountIdentities) {
         // Detached window — single account only
         identities = await api.getIdentities(accountId)
       }
 
-      // Select identity: match reply recipient or use default for the initial account
+      // Select identity: explicit recipient match wins; then the source
+      // account's Reply/Forward-with preference (no-outgoing accounts
+      // only); then this account's default identity; then the first
+      // available identity as the ultimate fallback.
       const matchedIdentity = selectIdentityForReply()
       const accountIdentities = identities.filter(i => i.accountId === accountId)
       const defaultIdentity = accountIdentities.find(i => i.isDefault) || accountIdentities[0]
-      const selectedIdentity = matchedIdentity || defaultIdentity || identities[0]
+      const selectedIdentity = matchedIdentity || replyForwardIdentity || defaultIdentity || identities[0]
       if (selectedIdentity) {
         selectedIdentityId = selectedIdentity.id
       }
