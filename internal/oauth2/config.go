@@ -91,14 +91,21 @@ func loadFromShim() {
 	}
 }
 
-// IsGoogleConfigured returns true if Google OAuth credentials are available
+// IsGoogleConfigured returns true if Google OAuth credentials are
+// available from ANY configured source — user override (Settings → OAuth
+// Credentials), a user-set slot alias, or the shipped build-time vars.
+// Routed through the resolver so a from-source build with empty
+// build-time creds but a user override saved in the UI still passes the
+// pre-flight check at the start of the OAuth flow.
 func IsGoogleConfigured() bool {
-	return GoogleClientID != ""
+	creds, ok := ClientConfigForID("google-mail")
+	return ok && creds.ClientID != ""
 }
 
-// IsMicrosoftConfigured returns true if Microsoft OAuth credentials are available
+// IsMicrosoftConfigured mirrors IsGoogleConfigured for Microsoft.
 func IsMicrosoftConfigured() bool {
-	return MicrosoftClientID != ""
+	creds, ok := ClientConfigForID("microsoft-mail")
+	return ok && creds.ClientID != ""
 }
 
 // IsProviderConfigured returns true if the specified provider has OAuth credentials

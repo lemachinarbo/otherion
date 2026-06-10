@@ -108,6 +108,24 @@ Migrations 31 through 39 ship together in 0.3.0 — no real-world DB will ever s
 - **Per-account "Reply/Forward with" identity preference** (v38). The `reply_forward_identity_id` column is dropped. v0.2.5 has no concept of receive-only accounts (that's the v37 feature this preference depends on), so the dropped value wouldn't have applied under v0.2.5 anyway — there's no behavior change. On re-upgrade to v0.3.0, accounts that had this preference set will revert to the empty default (i.e., the composer will use the user's default sending account when replying/forwarding on a receive-only account); the user re-picks the identity in the account's Server tab.
 - **Persistent body-parse-failed flag** (v39). The `body_failed` column is dropped. Effect under v0.2.5: every message that v0.3.0 had marked unparseable will be subject to v0.2.5's old (unbounded) re-fetch behavior — the same state the user was in before #240 was fixed. Bounded only by message count, not by sync cycles. On re-upgrade to v0.3.0, those messages will be re-attempted up to one time and re-flagged via the new persistence path; transient, self-correcting.
 
+**OAuth Credentials picker leftover state (inert, not cleaned by the rollback)**:
+
+The v0.3.0 OAuth Credentials picker (Settings → Accounts → OAuth Credentials, plus the equivalent extension settings sections) accumulates state in three places that the rollback SQL doesn't touch. All three are inert under v0.2.5 — the older code doesn't read them — so leaving them in place is safe. They're listed here in case you want a fully clean state, or are doing a re-upgrade and want to start fresh:
+
+- The `user_oauth_clients` table (on-demand, created when the user first saves a Custom client_id+secret). The table itself stays; rows stay. v0.2.5 doesn't read it. On re-upgrade to v0.3.0, the saved values become active again.
+- The `user_oauth_slot_aliases` table (on-demand, created when the user first picks the "Aerion - <provider>" alias option). Same treatment.
+- Per-slot rows in the existing `settings` table with key `oauth_active_choice:<slot_id>` (introduced post-v0.3.0-build1). These encode the user's explicit picker selection independent of which credentials/alias rows happen to exist. v0.2.5 doesn't read them. On re-upgrade to v0.3.0, the marker takes effect again and the picker reflects what was last selected.
+
+Optional cleanup (run only if you want zero leftover OAuth picker state in the DB):
+
+```sql
+DROP TABLE IF EXISTS user_oauth_clients;
+DROP TABLE IF EXISTS user_oauth_slot_aliases;
+DELETE FROM settings WHERE key LIKE 'oauth_active_choice:%';
+```
+
+Per-slot keyring entries (keyed as `oauth_user_client:<configID>`) are NOT cleared by SQL — remove them via the OS keyring manager (Seahorse / Keychain / Credential Manager) if you want a full external cleanup.
+
 **What round-trips losslessly**:
 
 - All emails and display names.

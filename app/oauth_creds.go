@@ -106,9 +106,18 @@ type OAuthCredsChoices struct {
 	// Current is the ID of the currently-selected choice. Reflects what
 	// ClientConfigForID would return today.
 	Current string `json:"current"`
-	// HasUserOverride preserves the binary signal for callers that just
-	// want to know whether Custom is currently active without parsing
-	// Current. True iff Current == "custom".
+	// HasUserOverride reports whether a saved Custom credentials row
+	// exists for the slot — INDEPENDENT of whether Custom is the
+	// currently-active choice. Frontend uses this to drive:
+	//   - placeholder copy ("Leave empty to keep current" vs "Paste …")
+	//   - "Clear saved Custom credentials" button visibility
+	//   - the "You also have a saved Custom override" hint when the
+	//     user is currently on an Aerion choice but Custom is still on file
+	// Under the pre-active-choice architecture this was equivalent to
+	// `Current == "custom"` because the picker wiped the row when the
+	// user switched away from Custom. With explicit active-choice
+	// routing the row survives picker switches, so the two conditions
+	// are now independent.
 	HasUserOverride bool `json:"hasUserOverride"`
 	// ClientIDFingerprint mirrors OAuthCredsStatus.ClientIDFingerprint —
 	// last 4 of the currently-active client_id, for visual confirmation.
@@ -174,7 +183,9 @@ func (a *App) GetOAuthCredsChoices(configID, extensionID string) (OAuthCredsChoi
 
 	// Determine the Current selection from credStore state.
 	out.Current = a.resolveCurrentChoice(configID)
-	out.HasUserOverride = out.Current == "custom"
+	// Independent of the active choice — the row may exist while the
+	// user is currently routed to Aerion-shipped or Aerion-mail.
+	out.HasUserOverride = a.credStore != nil && a.credStore.HasUserClientCreds(configID)
 
 	// Fingerprint of whatever currently resolves.
 	activeCreds, ok := oauth2.ClientConfigForID(configID)
@@ -184,12 +195,25 @@ func (a *App) GetOAuthCredsChoices(configID, extensionID string) (OAuthCredsChoi
 }
 
 // SetOAuthCredsChoice persists the user's picker selection for the slot.
-//   - "custom"          → caller is expected to have already called
-//                          SetOAuthCreds with the user's creds; this method
-//                          just clears any stale alias.
-//   - "aerion-mail"     → writes an alias mapping configID → <provider>-mail.
-//   - "aerion-shipped"  → clears both the user override AND any alias
-//                          (slot falls back to its own shipped creds).
+// The active-choice marker is what the resolver consults; saved
+// credentials and alias rows are LEFT IN PLACE so switching between
+// options is non-destructive.
+//
+//   - "custom"          → record marker. Caller invokes SetOAuthCreds
+//                          separately (via the editor's Save button) to
+//                          write or replace the actual credentials.
+//   - "aerion-shipped"  → record marker. The resolver skips override +
+//                          alias and routes to the slot's own shipped
+//                          creds. Any user_oauth_clients / alias rows
+//                          remain in storage so switching back to Custom
+//                          restores the user's saved values.
+//   - "aerion-mail"     → record marker AND ensure the alias row exists.
+//                          The user_oauth_clients row is preserved for
+//                          the same round-trip restore reason.
+//
+// The only path that actually DELETES the user's stored credentials is
+// the explicit ClearOAuthCreds Wails method ("Clear saved Custom
+// credentials" in the editor).
 //
 // Wails-bound.
 func (a *App) SetOAuthCredsChoice(configID, choiceID string) error {
@@ -198,36 +222,42 @@ func (a *App) SetOAuthCredsChoice(configID, choiceID string) error {
 	}
 	switch choiceID {
 	case "custom":
-		// SetOAuthCreds (called separately) handles the override write.
-		// Clear any conflicting alias.
-		return a.credStore.ClearOAuthSlotAlias(configID)
+		return a.credStore.SetOAuthActiveChoice(configID, "custom")
 	case "aerion-shipped":
-		// Clear both. The slot resolves to its own provider's shipped creds.
-		if err := a.credStore.ClearUserClientCreds(configID); err != nil {
-			return err
-		}
-		return a.credStore.ClearOAuthSlotAlias(configID)
+		return a.credStore.SetOAuthActiveChoice(configID, "aerion-shipped")
 	case "aerion-mail":
 		provider := providerFromConfigID(configID)
 		if provider == "" {
 			return fmt.Errorf("cannot derive provider from config id %q", configID)
 		}
-		// Clear any custom creds — alias wins now.
-		if err := a.credStore.ClearUserClientCreds(configID); err != nil {
+		// Ensure the alias row points to the right target so the resolver
+		// can recurse correctly on the mail slot.
+		if err := a.credStore.SetOAuthSlotAlias(configID, provider+"-mail"); err != nil {
 			return err
 		}
-		return a.credStore.SetOAuthSlotAlias(configID, provider+"-mail")
+		return a.credStore.SetOAuthActiveChoice(configID, "aerion-mail")
 	}
 	return fmt.Errorf("unknown choice id %q", choiceID)
 }
 
-// resolveCurrentChoice inspects the credStore to report which choice is
-// effectively active for the slot today. The returned ID is one of "custom",
-// "aerion-mail", or "aerion-shipped" (default).
+// resolveCurrentChoice reports which picker option is effectively active
+// for the slot. Reads the explicit active-choice marker first; falls back
+// to inferring the choice from row presence for slots that haven't had
+// the picker touched since upgrading from a pre-marker version (the
+// inference branch will stop running for a slot the first time
+// SetOAuthCredsChoice writes its marker).
+//
+// Returned ID is one of "custom" / "aerion-mail" / "aerion-shipped".
 func (a *App) resolveCurrentChoice(configID string) string {
 	if a.credStore == nil {
 		return "aerion-shipped"
 	}
+	if marker, err := a.credStore.GetOAuthActiveChoice(configID); err == nil && marker != "" {
+		return marker
+	}
+	// Backward-compat inference (pre-marker installs). First touch of
+	// the picker post-upgrade records an explicit marker and this branch
+	// stops running for that slot.
 	if a.credStore.HasUserClientCreds(configID) {
 		return "custom"
 	}

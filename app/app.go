@@ -476,6 +476,19 @@ func (a *App) Preflight() error {
 		return target, true
 	}
 
+	// Wire the user's explicit picker choice ("custom" / "aerion-shipped"
+	// / "aerion-mail") into the resolver. When recorded, this routes the
+	// resolver by choice rather than by row presence — so switching the
+	// picker between options no longer requires destroying stored values
+	// to make the new option take effect.
+	oauth2.ActiveChoiceLookup = func(configID string) (string, bool) {
+		choice, err := credStore.GetOAuthActiveChoice(configID)
+		if err != nil || choice == "" {
+			return "", false
+		}
+		return choice, true
+	}
+
 	return nil
 }
 

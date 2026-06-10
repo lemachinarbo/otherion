@@ -43,7 +43,7 @@
   import * as Select from '$lib/components/ui/select'
   import { toasts } from '$lib/stores/toast'
   // @ts-ignore - wailsjs bindings
-  import { GetOAuthCredsChoices, SetOAuthCreds, SetOAuthCredsChoice } from '$wailsjs/go/app/App'
+  import { GetOAuthCredsChoices, SetOAuthCreds, SetOAuthCredsChoice, ClearOAuthCreds } from '$wailsjs/go/app/App'
   // @ts-ignore - wailsjs bindings
   import type { app } from '$wailsjs/go/models'
 
@@ -109,11 +109,13 @@
       try {
         await SetOAuthCredsChoice(configID, 'custom')
       } catch (err) {
-        // Failing the alias-clear here doesn't block the user — they'll
-        // either save Custom creds (which establishes the override) or
-        // switch back. Surface as a console warning, not a toast.
-        console.warn('Failed to clear OAuth slot alias:', err)
+        console.warn('Failed to record Custom as active choice:', err)
       }
+      // Refresh so the UI reflects the now-current state. Without this,
+      // hasUserOverride / fingerprint / badge stay stale from the
+      // previous mode and the editor reads as "Not configured" even
+      // when the saved Custom row still exists in the DB.
+      await refresh()
       return
     }
     try {
@@ -129,23 +131,37 @@
   }
 
   async function save() {
-    if (!clientID.trim()) {
+    const id = clientID.trim()
+    const secret = clientSecret.trim()
+
+    // No-op-on-empty-with-override: when the user has already saved
+    // credentials and clicks Save with both fields blank, treat it as
+    // "I'm not changing anything" and silently close. Matches the IMAP
+    // password "Leave empty to keep current" pattern advertised by the
+    // placeholder copy below.
+    const requiredFieldsAllBlank = !id && (!secretRequired || !secret)
+    if (choices?.hasUserOverride && requiredFieldsAllBlank) {
+      return
+    }
+
+    if (!id) {
       toasts.error('Client ID is required')
       return
     }
-    if (secretRequired && !clientSecret.trim()) {
+    if (secretRequired && !secret) {
       toasts.error('Client Secret is required')
       return
     }
     saving = true
     try {
-      await SetOAuthCreds(configID, clientID.trim(), clientSecret.trim())
-      // SetOAuthCreds writes the user override; ensure any alias from a
-      // previous "Aerion mail client" choice is cleared.
+      await SetOAuthCreds(configID, id, secret)
+      // SetOAuthCreds writes the user override; ensure the active-choice
+      // marker reflects Custom so the resolver routes through the new
+      // override on the next OAuth call.
       try {
         await SetOAuthCredsChoice(configID, 'custom')
       } catch (err) {
-        console.warn('Failed to clear OAuth slot alias after Custom save:', err)
+        console.warn('Failed to record active choice after Custom save:', err)
       }
       toasts.success(`${label} credentials saved`)
       clientID = ''
@@ -156,6 +172,27 @@
       toasts.error('Failed to save credentials')
     } finally {
       saving = false
+    }
+  }
+
+  // Explicit delete of the stored Custom credentials. The picker
+  // dropdown no longer destroys stored values when switching between
+  // options (preserving Custom across round trips); this button is the
+  // only path that actually wipes the user_oauth_clients row.
+  async function clearSavedCustom() {
+    if (!choices?.hasUserOverride) return
+    if (!confirm(`Clear your saved Custom credentials for ${label}? You'll need to re-paste them to use Custom again.`)) {
+      return
+    }
+    try {
+      await ClearOAuthCreds(configID)
+      toasts.success(`${label} saved Custom credentials cleared`)
+      clientID = ''
+      clientSecret = ''
+      await refresh()
+    } catch (err) {
+      console.error('Failed to clear saved Custom credentials:', err)
+      toasts.error('Failed to clear saved credentials')
     }
   }
 </script>
@@ -206,7 +243,7 @@
           id={`${configID}-client-id`}
           type="text"
           bind:value={clientID}
-          placeholder={choices?.hasUserOverride ? 'paste a new Client ID to replace' : 'paste Client ID'}
+          placeholder={choices?.hasUserOverride ? 'Leave empty to keep current' : 'Paste Client ID'}
           disabled={saving}
           autocomplete="off"
         />
@@ -218,13 +255,25 @@
             id={`${configID}-client-secret`}
             type="password"
             bind:value={clientSecret}
-            placeholder={choices?.hasUserOverride ? 'paste a new Client Secret to replace' : 'paste Client Secret'}
+            placeholder={choices?.hasUserOverride ? 'Leave empty to keep current' : 'Paste Client Secret'}
             disabled={saving}
             autocomplete="new-password"
           />
         </div>
       {/if}
-      <div class="flex items-center justify-end gap-2 pt-2">
+      <div class="flex items-center gap-2 pt-2">
+        {#if choices?.hasUserOverride}
+          <!-- Outlined (not ghost) so it reads as a clickable button, not
+               an inline error message. Pushed to the left via mr-auto so
+               it's visually separated from Save on the right. -->
+          <Button size="sm" variant="outline" class="mr-auto border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive" onclick={clearSavedCustom} disabled={saving}>
+            <Icon icon="mdi:delete-outline" class="w-4 h-4 mr-1" />
+            Clear saved Custom credentials
+          </Button>
+        {:else}
+          <!-- Keep Save right-aligned in the no-override case too. -->
+          <div class="mr-auto"></div>
+        {/if}
         <Button size="sm" onclick={save} disabled={saving}>
           {#if saving}
             <Icon icon="mdi:loading" class="w-4 h-4 mr-1 animate-spin" />
@@ -233,5 +282,13 @@
         </Button>
       </div>
     </div>
+  {:else if choices?.hasUserOverride}
+    <!-- Mode is aerion-shipped or aerion-mail, but the user has Custom
+         credentials saved underneath. Surface that explicitly so the
+         user knows their data wasn't wiped by the switch and can route
+         back to it cheaply. -->
+    <p class="mt-3 text-xs text-muted-foreground">
+      You also have a saved Custom override — switch to Custom to use it.
+    </p>
   {/if}
 </div>

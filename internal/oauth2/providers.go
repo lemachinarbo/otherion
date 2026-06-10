@@ -133,13 +133,28 @@ func MicrosoftContactsOnlyProvider() ProviderConfig {
 	}
 }
 
-// GetProvider returns the OAuth2 configuration for the specified provider
+// GetProvider returns the OAuth2 configuration for the specified provider.
+//
+// For the mail entry-point names ("google", "microsoft") the returned
+// config's ClientID/ClientSecret reflect the full resolver chain
+// (UserOverrideLookup → SlotAliasLookup → registered providers), so a
+// user-supplied client_id saved via Settings → OAuth Credentials wins
+// over the shipped build-time defaults. Without this overlay the
+// mail-add flow (App.StartOAuthFlow → Manager.StartAuthFlow → GetProvider)
+// would silently use the embedded ClientID even after the user saved
+// their own override — issue #138.
+//
+// Other names (extension / standalone-contacts variants) return their
+// static ProviderConfig unchanged. Their callers (app/coreimpl.go and
+// GetProviderForClientConfig) already overlay slot-resolved creds on top
+// of the returned config, so retrofitting them here would be redundant
+// and would change the URL/scope semantics of standalone callers.
 func GetProvider(name string) (ProviderConfig, error) {
 	switch name {
 	case "google":
-		return GoogleProvider(), nil
+		return overlayResolvedCreds(GoogleProvider(), "google-mail"), nil
 	case "microsoft":
-		return MicrosoftProvider(), nil
+		return overlayResolvedCreds(MicrosoftProvider(), "microsoft-mail"), nil
 	case "google-contacts":
 		return GoogleContactsOnlyProvider(), nil
 	case "microsoft-contacts":
@@ -151,6 +166,22 @@ func GetProvider(name string) (ProviderConfig, error) {
 	default:
 		return ProviderConfig{}, fmt.Errorf("unknown OAuth provider: %s", name)
 	}
+}
+
+// overlayResolvedCreds replaces base.ClientID / base.ClientSecret with
+// the values the resolver chain returns for slot, leaving the base
+// config (URLs, scopes, name) untouched. When the resolver has no
+// credentials for the slot — neither user override nor shipped — the
+// base config is returned as-is, preserving stock behaviour for callers
+// that haven't customised anything.
+func overlayResolvedCreds(base ProviderConfig, slot string) ProviderConfig {
+	creds, ok := ClientConfigForID(slot)
+	if !ok {
+		return base
+	}
+	base.ClientID = creds.ClientID
+	base.ClientSecret = creds.ClientSecret
+	return base
 }
 
 // SupportedProviders returns the list of supported OAuth provider names for email accounts
