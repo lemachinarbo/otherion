@@ -18,13 +18,6 @@ linters:
         - all
         - -QF*
         - -ST*
-    govet:
-      # hostport is a govet analyzer v2 enables by default but v1 did
-      # not. The IPv6 address-format findings it raises in the IMAP/SMTP
-      # clients are pre-existing; tracked separately rather than fixed
-      # here so this stays a CI-parity change.
-      disable:
-        - hostport
   exclusions:
     generated: lax
     presets:
