@@ -8,6 +8,11 @@
 - Added Extension infrastructure
 - ALPHA: Added Contacts extension - shipped disabled
 - ALPHA: Added Calendar extension - shipped disabled - [#28](https://github.com/hkdb/aerion/issues/28)
+- Updated extension translations:
+    - Czech
+    - German
+    - Vietnamese
+    - Chinese - CN, HK, TW
 - Added runtime config of client id/secret - [#138](https://github.com/hkdb/aerion/issues/138)
 - Added force re-sync of contacts
 - Added Vietnamese translation - PR [#232](https://github.com/hkdb/aerion/pull/232)
