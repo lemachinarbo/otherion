@@ -35,6 +35,7 @@
 - Fixed post action blank conversation pane - [#271](https://github.com/hkdb/aerion/issues/271)
 - Fixed separate smtp creds persistence - [#270](https://github.com/hkdb/aerion/issues/270)
 - Fixed plaintext reply/fwd - [#285](https://github.com/hkdb/aerion/issues/285)
+- Fixed print feature - [#280](https://github.com/hkdb/aerion/issues/280)
 - Bumped flatpak build to Gnome 50 runtime
 
 
