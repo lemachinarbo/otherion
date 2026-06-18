@@ -733,7 +733,7 @@
     "deleteConfirmName": "Eliminare \"{name}\"? Verranno rimossi tutti i contatti sincronizzati da questa fonte.",
 	"forceSync": "Forza risincronizzazione",
     "forceSyncConfirmTitle": "Forzare la risincronizzazione di \"{name}\"?",
-    "forceSyncConfirmDescription": "Recupera nuovamente dal server tutti i contatti da \"{nome}\". Questa operazione completa i campi (numero di telefono, indirizzo, organizzazione, note, ecc.) che potrebbero risultare mancanti nei contatti sincronizzati in precedenza con una versione precedente di Aerion. L’operazione potrebbe richiedere alcuni minuti in caso di rubriche di grandi dimensioni.",
+    "forceSyncConfirmDescription": "Recupera nuovamente dal server tutti i contatti da \"{name}\". Questa operazione completa i campi (numero di telefono, indirizzo, organizzazione, note, ecc.) che potrebbero risultare mancanti nei contatti sincronizzati in precedenza con una versione precedente di Aerion. L’operazione potrebbe richiedere alcuni minuti in caso di rubriche di grandi dimensioni.",
 	"name": "Nome",
     "namePlaceholder": "es., Nextcloud, Lavoro, Personale",
     "serverUrl": " URL Server",
