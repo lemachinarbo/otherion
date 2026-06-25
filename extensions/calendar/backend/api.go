@@ -78,6 +78,18 @@ func NewAPI(store *Store, secrets coreapi.Secrets, auth coreapi.Auth, queue *Pen
 	return &API{store: store, secrets: secrets, auth: auth, queue: queue}
 }
 
+// SetDisplayTimezone persists the user's configured calendar display timezone
+// (IANA name, e.g. "America/Los_Angeles") and applies it process-wide, so the
+// sync/parse path interprets tz-less all-day/floating event times in that zone
+// — matching how the frontend buckets days. Empty clears the override (system tz).
+func (a *API) SetDisplayTimezone(tz string) error {
+	if err := a.store.SetMeta("display_timezone", tz); err != nil {
+		return err
+	}
+	SetConfiguredTimezone(tz)
+	return nil
+}
+
 // AddCalDAVSource probes the user-entered server, persists the source +
 // discovered calendars in a single transaction, and stores the password
 // via coreapi.Secrets. Returns the new source ID.

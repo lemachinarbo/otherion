@@ -94,14 +94,14 @@
   }
 
   /**
-   * Multi-day timed events go in the all-day band (with continuation arrows
-   * at week boundaries). Single-day timed events go in the hour grid.
-   * All-day events always go in the band.
+   * Only all-day events go in the all-day band. Timed events — including
+   * multi-day timed events — go in the hour grid, where timedBlocksForDay
+   * clips each instance to each day's [dayStart, dayEnd) window, so a
+   * multi-day timed event renders as proper time blocks across days
+   * (e.g. 2pm→midnight, full day, midnight→10am) instead of a flat all-day bar.
    */
   function isBandEvent(inst: backend.EventInstance): boolean {
-    if (inst.isAllDay) return true
-    const span = inst.instanceEndUnix - inst.instanceStartUnix
-    return span > 86400  // > 24h → multi-day
+    return inst.isAllDay
   }
 
   // Band events laid out across `dates`, packed into vertical lanes.

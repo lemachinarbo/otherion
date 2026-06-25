@@ -175,12 +175,15 @@ func cloneParams(src ical.Params) ical.Params {
 // empty or unknown names so expansion still works (just less correct for
 // DST around floating events).
 func resolveLocation(tzName string) *time.Location {
+	// tz-less recurring events (all-day / floating) expand in the configured
+	// display tz, matching how the frontend buckets days. An explicit, valid
+	// TZID still wins.
 	if tzName == "" {
-		return time.Local
+		return configuredTZ()
 	}
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
-		return time.Local
+		return configuredTZ()
 	}
 	return loc
 }

@@ -1161,6 +1161,32 @@ func (s *Store) SetCalendarColor(calendarID, hex string) error {
 	return nil
 }
 
+// GetMeta reads a value from the meta kv table. Returns ("", nil) when absent.
+func (s *Store) GetMeta(key string) (string, error) {
+	var v string
+	err := s.DB().QueryRow(`SELECT value FROM meta WHERE key = ?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get meta %q: %w", key, err)
+	}
+	return v, nil
+}
+
+// SetMeta upserts a key/value into the meta kv table.
+func (s *Store) SetMeta(key, value string) error {
+	_, err := s.DB().Exec(
+		`INSERT INTO meta (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
+		key, value,
+	)
+	if err != nil {
+		return fmt.Errorf("set meta %q: %w", key, err)
+	}
+	return nil
+}
+
 // UpdateCalendarWritable flips the per-calendar writable flag. Called by
 // each provider's discovery + periodic sync when the calendar's permission
 // signal (Google AccessRole, CalDAV current-user-privilege-set, Microsoft

@@ -115,7 +115,10 @@ func buildEvent(ev *ical.Event, rawICS string) (Event, error) {
 	isAllDay := dtstartProp.Params.Get(ical.ParamValue) == string(ical.ValueDate)
 	tzName := dtstartProp.Params.Get(ical.ParamTimezoneID)
 
-	loc := time.Local
+	// tz-less values (all-day VALUE=DATE, floating no-TZID) are interpreted in
+	// the user's configured display tz so they bucket on the right day; an
+	// explicit TZID still wins.
+	loc := configuredTZ()
 	if tzName != "" {
 		if l, err := time.LoadLocation(tzName); err == nil {
 			loc = l
@@ -165,7 +168,7 @@ func buildOverride(ev *ical.Event) (EventOverride, error) {
 	}
 
 	tzName := recProp.Params.Get(ical.ParamTimezoneID)
-	loc := time.Local
+	loc := configuredTZ() // tz-less RECURRENCE-ID → configured display tz
 	if tzName != "" {
 		if l, err := time.LoadLocation(tzName); err == nil {
 			loc = l

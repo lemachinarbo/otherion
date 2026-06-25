@@ -142,6 +142,10 @@ export function Calendar_SetCalendarVisible(arg1, arg2) {
   return window['go']['app']['App']['Calendar_SetCalendarVisible'](arg1, arg2);
 }
 
+export function Calendar_SetDisplayTimezone(arg1) {
+  return window['go']['app']['App']['Calendar_SetDisplayTimezone'](arg1);
+}
+
 export function Calendar_SetOrganizerIdentity(arg1, arg2) {
   return window['go']['app']['App']['Calendar_SetOrganizerIdentity'](arg1, arg2);
 }

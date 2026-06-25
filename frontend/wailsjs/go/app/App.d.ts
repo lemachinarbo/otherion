@@ -89,6 +89,8 @@ export function Calendar_SetCalendarColor(arg1:string,arg2:string):Promise<void>
 
 export function Calendar_SetCalendarVisible(arg1:string,arg2:boolean):Promise<void>;
 
+export function Calendar_SetDisplayTimezone(arg1:string):Promise<void>;
+
 export function Calendar_SetOrganizerIdentity(arg1:string,arg2:string):Promise<void>;
 
 export function Calendar_SetSyncInterval(arg1:string,arg2:number):Promise<void>;

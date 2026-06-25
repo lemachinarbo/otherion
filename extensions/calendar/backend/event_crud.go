@@ -891,7 +891,10 @@ func serializeVEVENT(uid string, in EventInput) (string, error) {
 // setDateValue stamps a DATE-only property for all-day events.
 func setDateValue(event *ical.Event, propName string, unix int64) {
 	prop := ical.NewProp(propName)
-	prop.Value = time.Unix(unix, 0).UTC().Format("20060102")
+	// Extract the calendar date in the configured display tz — the same zone the
+	// parse (buildEvent) and the create flow anchor all-day events to — so a
+	// synced→edited→written all-day event round-trips to the same day.
+	prop.Value = time.Unix(unix, 0).In(configuredTZ()).Format("20060102")
 	prop.Params = ical.Params{}
 	prop.Params.Set(ical.ParamValue, "DATE")
 	event.Props.Set(prop)

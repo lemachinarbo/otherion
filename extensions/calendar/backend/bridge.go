@@ -128,6 +128,12 @@ func (b *CalendarBridge) ensureInit() error {
 			return
 		}
 
+		// Seed the configured display tz from persisted state so background sync
+		// interprets tz-less all-day/floating event times in the user's zone.
+		if tz, mErr := store.GetMeta("display_timezone"); mErr == nil && tz != "" {
+			SetConfiguredTimezone(tz)
+		}
+
 		secrets := b.deps.Core.Storage().Secrets(extensionID)
 		auth := b.deps.Core.Auth()
 		queue := NewPendingQueue(store, secrets, auth, b.deps.Core.Events())
@@ -191,6 +197,20 @@ func (b *CalendarBridge) Calendar_SetOrganizerIdentity(sourceID, email string) e
 		return err
 	}
 	return b.api.SetOrganizerIdentity(sourceID, email)
+}
+
+// Calendar_SetDisplayTimezone persists + applies the user's configured calendar
+// display timezone so the sync/parse path anchors tz-less all-day/floating event
+// times to the same zone the UI buckets by. Called from the frontend whenever
+// the display tz resolves/changes and on init.
+func (b *CalendarBridge) Calendar_SetDisplayTimezone(tz string) error {
+	if !b.gateEnabled() {
+		return errors.New("calendar: extension disabled")
+	}
+	if err := b.ensureInit(); err != nil {
+		return err
+	}
+	return b.api.SetDisplayTimezone(tz)
 }
 
 // Calendar_ReprobeCalDAVOrganizerIdentities re-runs the principal

@@ -7,6 +7,9 @@
 - Added custom oauth for imap, cardav, and caldav
 - Custom oauth refresh token handling fix
 - Use TOFU cert store for DAV certs
+- Timezone config fix
+- Multi-day week and day view fix
+- Multi-day monthly view fix - [#304](https://github.com/hkdb/aerion/issues/304)
 
 
 **v0.3.0 - 06-23-2026**

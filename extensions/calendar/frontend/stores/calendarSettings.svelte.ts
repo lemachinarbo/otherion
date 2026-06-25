@@ -19,6 +19,8 @@
 
 import { logger } from '$extensions/calendar/frontend/lib/logger'
 import { calendarSources } from '$extensions/calendar/frontend/stores/calendarSources.svelte'
+// @ts-ignore - wailsjs bindings
+import { Calendar_SetDisplayTimezone } from '$wailsjs/go/app/App.js'
 
 const STORAGE_KEY_TZ        = 'aerion:calendar:displayTimezone'
 const STORAGE_KEY_GLOBAL    = 'aerion:calendar:globalDefaultCalendarId'
@@ -54,6 +56,28 @@ try {
 } catch (err) {
   logger.warn(`calendarSettings: providerDefaults read failed: ${err}`)
 }
+
+function currentEffectiveTZ(): string {
+  return displayTimezone !== ''
+    ? displayTimezone
+    : Intl.DateTimeFormat().resolvedOptions().timeZone
+}
+
+// Push the resolved display tz to the backend so the sync/parse path anchors
+// tz-less all-day/floating event times to the same zone the UI buckets by.
+// Best-effort: a failure (e.g. extension not yet initialized) is non-fatal — the
+// backend also seeds from persisted state at init, and this re-pushes on change.
+function pushTimezoneToBackend(): void {
+  try {
+    void Calendar_SetDisplayTimezone(currentEffectiveTZ())
+  } catch (err) {
+    logger.warn(`calendarSettings: push tz to backend failed: ${err}`)
+  }
+}
+
+// Sync the persisted (possibly overridden) tz to the backend on load, so a
+// display-tz override set in a previous session is re-applied before sync runs.
+pushTimezoneToBackend()
 
 /** True iff calendarId resolves to a calendar whose source is writable AND
  *  the calendar itself is writable. The composer's default pick must be a
@@ -108,12 +132,15 @@ export const calendarSettings = {
     try {
       if (tz === '') {
         window.localStorage.removeItem(STORAGE_KEY_TZ)
-        return
       }
-      window.localStorage.setItem(STORAGE_KEY_TZ, tz)
+      if (tz !== '') {
+        window.localStorage.setItem(STORAGE_KEY_TZ, tz)
+      }
     } catch (err) {
       logger.warn(`calendarSettings: localStorage write failed: ${err}`)
     }
+    // Keep the backend's parse/sync zone in lockstep with the UI's zone.
+    pushTimezoneToBackend()
   },
 
   /** The calendar pre-selected when the composer opens. Returns '' if the

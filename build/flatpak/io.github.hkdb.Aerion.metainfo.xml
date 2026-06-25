@@ -258,6 +258,9 @@
           <li>Added custom oauth for imap, cardav, and caldav</li>
           <li>Custom oauth refresh token handling fix</li>
           <li>Use TOFU cert store for DAV certs</li>
+          <li>Multi-day week and day view fix</li>
+          <li>Multi-day monthly view fix - #304</li>
+
         </ul>
       </description>
     </release>

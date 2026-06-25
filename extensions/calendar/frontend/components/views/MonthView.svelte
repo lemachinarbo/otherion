@@ -1,20 +1,16 @@
 <script lang="ts">
   // MonthView — 6-row × 7-col grid showing the anchored month plus spill
-  // days from adjacent months. Reads events from the events store (already
-  // expanded into EventInstances for the visible range).
+  // days from adjacent months.
   //
-  // Per-cell rendering:
-  //   - Day number top-left. Muted for other-month days. Circled for today.
-  //   - Up to 3 visible event pills sorted by InstanceStartUnix.
-  //   - "+N more" overflow indicator at the bottom of overcrowded cells.
-  //   - Multi-day events render as a continuous band — Phase 1F polish
-  //     adds the proper "spans across cells" layout; 1D ships each cell
-  //     showing the event as a normal pill (so a 3-day event shows in 3
-  //     cells with the same summary, which is acceptable for v1).
-  //
-  // Click an empty area of a day → switch to DayView anchored there (the
-  // DayView is a "coming soon" placeholder in 1D; the navigation works).
-  // Click an event pill → calendarView.selectEvent(instance.id).
+  // Layout per week-row (a CSS grid with explicit rows):
+  //   - Row 1: day-number header per cell (muted for other-month, circled today).
+  //   - Rows 2..(1+laneCount): multi-day "band" bars that SPAN columns — a
+  //     multi-day event renders as one continuous bar across its days (lane-
+  //     packed, with ◀/▶ continuation markers where it crosses a week-row).
+  //   - Last row (1fr): per-cell single-day event pills + "+N more" overflow.
+  // A background <button> per cell (spanning all rows, behind everything) keeps
+  // the empty-area click → DayView navigation; EventCards stopPropagation so a
+  // bar/pill click selects the event.
 
   import { _ } from 'svelte-i18n'
   import EventCard from '$extensions/calendar/frontend/components/EventCard.svelte'
@@ -27,13 +23,27 @@
 
   const MAX_EVENTS_PER_CELL = 3
 
+  type Cell = { date: Date; isOtherMonth: boolean; isToday: boolean }
+
+  type BandBlock = {
+    instance: backend.EventInstance
+    color: string
+    startColIdx: number // first overlapped column in this week-row (0..6)
+    endColIdx: number // last overlapped column (inclusive)
+    laneIdx: number // vertical lane within the band
+    continuesLeft: boolean // event started before this week-row
+    continuesRight: boolean // event continues past this week-row
+  }
+
+  type BandRow = { blocks: BandBlock[]; laneCount: number }
+
   // 6 rows × 7 cols = 42 cells starting from the grid-start (in tz).
   const gridStart = $derived(calendarView.monthGridStart(calendarView.anchorDate))
   const anchorMonth = $derived(toTzDate(calendarView.anchorDate).getMonth())
   const today = $derived(calendarView.startOfDay(new Date()).getTime())
 
   const cells = $derived.by(() => {
-    const out: { date: Date; isOtherMonth: boolean; isToday: boolean }[] = []
+    const out: Cell[] = []
     for (let i = 0; i < 42; i++) {
       const date = calendarView.addDays(gridStart, i)
       out.push({
@@ -45,22 +55,107 @@
     return out
   })
 
-  // Group events by day-of-grid. An event overlaps a day if its
-  // [start, end] intersects [dayStart, dayEnd).
-  const eventsByCell = $derived.by(() => {
+  // An event is "multi-day" when it touches 2+ distinct grid days. The −1s on
+  // the end makes an all-day event [1st 00:00, 2nd 00:00) count as single-day.
+  function isMultiDay(inst: backend.EventInstance): boolean {
+    const startDay = calendarView.startOfDay(new Date(inst.instanceStartUnix * 1000)).getTime()
+    const endDay = calendarView.startOfDay(new Date((inst.instanceEndUnix - 1) * 1000)).getTime()
+    return endDay > startDay
+  }
+
+  // Slice the 42 cells into 6 week-rows, each with precomputed day-start unix
+  // timestamps + the row's end (exclusive).
+  const weekRows = $derived.by(() => {
+    const rows: { cells: Cell[]; dayStartsUnix: number[]; rowEndUnix: number }[] = []
+    for (let w = 0; w < 6; w++) {
+      const rowCells = cells.slice(w * 7, w * 7 + 7)
+      const dayStartsUnix = rowCells.map(c => Math.floor(c.date.getTime() / 1000))
+      rows.push({ cells: rowCells, dayStartsUnix, rowEndUnix: dayStartsUnix[6] + 86400 })
+    }
+    return rows
+  })
+
+  // Per week-row: multi-day events laid out as column-spanning bars, lane-packed.
+  // Direct port of TimelineView's bandBlocks, scoped to each row's 7 columns —
+  // so a week-crossing event segments into one bar per row automatically.
+  const bandRows = $derived.by<BandRow[]>(() => {
+    return weekRows.map(({ dayStartsUnix, rowEndUnix }) => {
+      const candidates: BandBlock[] = []
+      for (const inst of events.instances) {
+        if (!isMultiDay(inst)) continue
+        if (inst.instanceEndUnix <= dayStartsUnix[0]) continue
+        if (inst.instanceStartUnix >= rowEndUnix) continue
+
+        let startColIdx = 0
+        let endColIdx = 6
+        let continuesLeft = false
+        let continuesRight = false
+        for (let i = 0; i < 7; i++) {
+          if (inst.instanceStartUnix < dayStartsUnix[i] + 86400) {
+            startColIdx = i
+            continuesLeft = inst.instanceStartUnix < dayStartsUnix[0]
+            break
+          }
+        }
+        for (let i = 6; i >= 0; i--) {
+          if (inst.instanceEndUnix > dayStartsUnix[i]) {
+            endColIdx = i
+            continuesRight = inst.instanceEndUnix > rowEndUnix
+            break
+          }
+        }
+
+        candidates.push({
+          instance: inst,
+          color: calendarSources.colorOf(inst.calendarId),
+          startColIdx,
+          endColIdx,
+          laneIdx: 0,
+          continuesLeft,
+          continuesRight,
+        })
+      }
+
+      candidates.sort((a, b) => {
+        if (a.startColIdx !== b.startColIdx) return a.startColIdx - b.startColIdx
+        return a.instance.instanceStartUnix - b.instance.instanceStartUnix
+      })
+
+      const laneRightmostCol: number[] = []
+      for (const block of candidates) {
+        let assigned = -1
+        for (let lane = 0; lane < laneRightmostCol.length; lane++) {
+          if (laneRightmostCol[lane] < block.startColIdx) {
+            assigned = lane
+            break
+          }
+        }
+        if (assigned < 0) {
+          assigned = laneRightmostCol.length
+          laneRightmostCol.push(-1)
+        }
+        block.laneIdx = assigned
+        laneRightmostCol[assigned] = block.endColIdx
+      }
+
+      const laneCount = candidates.length === 0 ? 0 : Math.max(...candidates.map(b => b.laneIdx)) + 1
+      return { blocks: candidates, laneCount }
+    })
+  })
+
+  // Single-day events only, bucketed per cell (multi-day events render as bands).
+  const pillsByCell = $derived.by(() => {
     const out: backend.EventInstance[][] = Array.from({ length: 42 }, () => [])
     if (events.instances.length === 0) return out
-
     for (let i = 0; i < 42; i++) {
       const dayStart = cells[i].date.getTime() / 1000
       const dayEnd = dayStart + 86400
       for (const inst of events.instances) {
-        // Overlap test: instance ends after day starts AND instance starts before day ends.
+        if (isMultiDay(inst)) continue
         if (inst.instanceEndUnix > dayStart && inst.instanceStartUnix < dayEnd) {
           out[i].push(inst)
         }
       }
-      // Sort each cell by start time so the time-prefixed labels render in order.
       out[i].sort((a, b) => a.instanceStartUnix - b.instanceStartUnix)
     }
     return out
@@ -105,43 +200,89 @@
       {/each}
     </div>
 
-    <!-- 6-row grid -->
-    <div class="flex-1 grid grid-cols-7 grid-rows-6 min-h-0">
-      {#each cells as cell, i (i)}
-        {@const cellEvents = eventsByCell[i]}
-        {@const visibleEvents = cellEvents.slice(0, MAX_EVENTS_PER_CELL)}
-        {@const overflow = cellEvents.length - visibleEvents.length}
-        <button
-          type="button"
-          class="flex flex-col gap-0.5 p-1 text-left border-b border-r border-border min-h-0 overflow-hidden
-                 hover:bg-muted/30 transition-colors
-                 {cell.isOtherMonth ? 'bg-muted/10' : 'bg-background'}"
-          onclick={() => onCellClick(cell.date)}
+    <!-- 6 week-rows -->
+    <div class="flex-1 grid grid-rows-6 min-h-0">
+      {#each weekRows as row, w (w)}
+        {@const band = bandRows[w]}
+        {@const pillCap = Math.max(0, MAX_EVENTS_PER_CELL - band.laneCount)}
+        <div
+          class="relative grid grid-cols-7 border-b border-border min-h-0 overflow-hidden"
+          style:grid-template-rows={`auto repeat(${band.laneCount}, minmax(0, auto)) 1fr`}
         >
-          <div class="flex items-center justify-start shrink-0">
-            <span
-              class="inline-flex items-center justify-center text-xs leading-none w-5 h-5 rounded-full
-                     {cell.isToday ? 'bg-primary text-primary-foreground font-semibold' : ''}
-                     {cell.isOtherMonth && !cell.isToday ? 'text-muted-foreground/50' : 'text-foreground'}"
+          <!-- Background cell layer: borders, hover, empty-area click → DayView -->
+          {#each row.cells as cell, i (i)}
+            <button
+              type="button"
+              aria-label={String(toTzDate(cell.date).getDate())}
+              class="border-r border-border min-h-0 hover:bg-muted/30 transition-colors
+                     {cell.isOtherMonth ? 'bg-muted/10' : 'bg-background'}"
+              style:grid-column={`${i + 1}`}
+              style:grid-row="1 / -1"
+              onclick={() => onCellClick(cell.date)}
+            ></button>
+          {/each}
+
+          <!-- Day-number header layer (visual only — clicks pass through) -->
+          {#each row.cells as cell, i (i)}
+            <div
+              class="pointer-events-none px-1 pt-1 flex items-center justify-start"
+              style:grid-column={`${i + 1}`}
+              style:grid-row="1"
             >
-              {toTzDate(cell.date).getDate()}
-            </span>
-          </div>
-          <div class="flex-1 flex flex-col gap-0.5 min-h-0 overflow-hidden">
-            {#each visibleEvents as inst (inst.id + ':' + inst.instanceStartUnix)}
-              <EventCard
-                instance={inst}
-                color={calendarSources.colorOf(inst.calendarId)}
-                onclick={() => onEventClick(inst)}
-              />
-            {/each}
-            {#if overflow > 0}
-              <span class="text-[10px] text-muted-foreground px-1">
-                {$_('calendar.month.moreEventsHidden', { values: { n: overflow } })}
+              <span
+                class="inline-flex items-center justify-center text-xs leading-none w-5 h-5 rounded-full
+                       {cell.isToday ? 'bg-primary text-primary-foreground font-semibold' : ''}
+                       {cell.isOtherMonth && !cell.isToday ? 'text-muted-foreground/50' : 'text-foreground'}"
+              >
+                {toTzDate(cell.date).getDate()}
               </span>
-            {/if}
-          </div>
-        </button>
+            </div>
+          {/each}
+
+          <!-- Multi-day spanning bars -->
+          {#each band.blocks as block (block.instance.id + ':' + block.instance.instanceStartUnix)}
+            <div
+              class="pointer-events-auto px-0.5 min-w-0"
+              style:grid-column={`${block.startColIdx + 1} / ${block.endColIdx + 2}`}
+              style:grid-row={`${block.laneIdx + 2}`}
+            >
+              <EventCard
+                instance={block.instance}
+                color={block.color}
+                continuesLeft={block.continuesLeft}
+                continuesRight={block.continuesRight}
+                onclick={() => onEventClick(block.instance)}
+              />
+            </div>
+          {/each}
+
+          <!-- Single-day pills + overflow, per cell -->
+          {#each row.cells as cell, i (i)}
+            {@const cellPills = pillsByCell[w * 7 + i]}
+            {@const visible = cellPills.slice(0, pillCap)}
+            {@const overflow = cellPills.length - visible.length}
+            <div
+              class="pointer-events-none flex flex-col gap-0.5 px-1 pb-1 min-h-0 overflow-hidden"
+              style:grid-column={`${i + 1}`}
+              style:grid-row={`${2 + band.laneCount} / -1`}
+            >
+              {#each visible as inst (inst.id + ':' + inst.instanceStartUnix)}
+                <div class="pointer-events-auto min-w-0">
+                  <EventCard
+                    instance={inst}
+                    color={calendarSources.colorOf(inst.calendarId)}
+                    onclick={() => onEventClick(inst)}
+                  />
+                </div>
+              {/each}
+              {#if overflow > 0}
+                <span class="pointer-events-none text-[10px] text-muted-foreground px-1">
+                  {$_('calendar.month.moreEventsHidden', { values: { n: overflow } })}
+                </span>
+              {/if}
+            </div>
+          {/each}
+        </div>
       {/each}
     </div>
   {/if}
