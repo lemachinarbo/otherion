@@ -11,6 +11,7 @@
 - Multi-day week and day view fix
 - Multi-day monthly view fix - [#304](https://github.com/hkdb/aerion/issues/304)
 - Composer body config - [#216](https://github.com/hkdb/aerion/issues/216)
+- Attachment parsing improvements - [#307](https://github.com/hkdb/aerion/issues/307)
 
 
 **v0.3.0 - 06-23-2026**

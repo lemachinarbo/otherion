@@ -152,6 +152,31 @@ func (d *AttachmentDownloader) findAttachmentInMultipart(mr gomessage.MultipartR
 			continue
 		}
 
+		// TNEF (winmail.dat): the requested file may live INSIDE the container.
+		// The sync extractor stored the inner TNEF Title as the filename, so match
+		// the target against the decoded inner attachments. part.Body is already
+		// transfer-decoded by go-message, so it feeds tnef.Decode directly.
+		contentType, _, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
+		disposition, dispParams, _ := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
+		if contentType == "application/ms-tnef" ||
+			(disposition == "attachment" && strings.EqualFold(dispParams["filename"], "winmail.dat")) {
+			raw, err := io.ReadAll(part.Body)
+			if err != nil {
+				continue
+			}
+			for _, inner := range DecodeTNEFAttachments(raw) {
+				if inner.Filename == targetFilename {
+					return inner.Content, nil
+				}
+			}
+			// Decode failed or no inner match: only the container itself can satisfy
+			// a request for "winmail.dat"; otherwise move on.
+			if strings.EqualFold(targetFilename, "winmail.dat") {
+				return raw, nil
+			}
+			continue
+		}
+
 		// Check filename
 		filename := getFilename(part)
 		if filename == targetFilename {
