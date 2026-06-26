@@ -254,6 +254,7 @@
     "account": "Konto"
   },
   "toast": {
+    "selectOAuthAccount": "Bitte wähle ein OAuth-Konto",
     "archived": "Archiviert",
     "conversationArchived": "Unterhaltung archiviert",
     "movedToTrash": "In den Papierkorb verschoben",
@@ -434,6 +435,23 @@
     "failedToLoad": "App-Informationen konnten nicht geladen werden"
   },
   "account": {
+    "enterPassword": "Passwort eingeben",
+    "customOAuthHelp": "Verwende deine eigene OAuth-App. Gib die Issuer-URL deines Anbieters ein und Aerion ermittelt die Endpunkte automatisch.",
+    "customOAuthIssuer": "Issuer-URL",
+    "customOAuthIssuerHelp": "Die Basis-URL deines Anbieters. Aerion liest dessen Dokument /.well-known/openid-configuration.",
+    "customOAuthDiscover": "Suchen",
+    "customOAuthDiscovered": "Endpunkte gefunden",
+    "customOAuthManual": "Endpunkte manuell eingeben",
+    "customOAuthAuthUrl": "Autorisierungs-Endpunkt",
+    "customOAuthTokenUrl": "Token-Endpunkt",
+    "customOAuthUserinfoUrl": "Userinfo-Endpunkt",
+    "customOAuthClientId": "Client ID",
+    "customOAuthClientSecret": "Client Secret",
+    "customOAuthClientSecretPlaceholder": "Für einen öffentlichen Client (PKCE) leer lassen",
+    "customOAuthScopes": "Scopes",
+    "customOAuthScopesHelp": "Durch Leerzeichen getrennt. Die meisten Server benötigen offline_access für ein Refresh Token.",
+    "customOAuthRedirectUri": "Redirect URI",
+    "customOAuthRedirectUriHelp": "Registriere dies in deiner OAuth-App mit Regex/Musterabgleich — der Loopback-Port wird bei der Anmeldung dynamisch zugewiesen (RFC 8252).",
     "addTitle": "E-Mail-Konto hinzufügen",
     "editTitle": "Konto bearbeiten",
     "editSharedMailboxTitle": "Geteiltes Postfach bearbeiten",
@@ -725,6 +743,12 @@
     "berConversionConfirm": "Konvertieren & Importieren"
   },
   "contactSource": {
+    "fillUrlAccount": "Bitte gib die Server-URL ein und wähle ein OAuth-Konto",
+    "authentication": "Authentifizierung",
+    "authPassword": "Passwort",
+    "authOAuth": "OAuth-Konto",
+    "oauthAccount": "OAuth-Konto",
+    "noCustomAccounts": "Keine Konten mit benutzerdefiniertem OAuth. Füge zuerst ein E-Mail-Konto mit einem benutzerdefinierten OAuth-Anbieter hinzu, dann kann es hier CardDAV unterstützen.",
     "title": "Kontaktquellen",
     "noSources": "Keine Kontaktquellen konfiguriert",
     "addSource": "Kontaktquelle hinzufügen",

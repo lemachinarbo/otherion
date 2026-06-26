@@ -74,6 +74,12 @@
       "emptyState": "Fügen Sie eine CalDAV-Quelle hinzu, um hier Termine anzuzeigen."
     },
     "add": {
+      "authMethod": "Authentifizierung",
+      "authPassword": "Passwort",
+      "authOAuth": "OAuth-Konto",
+      "oauthAccountLabel": "OAuth-Konto",
+      "oauthAccountRequired": "Wählen Sie ein OAuth-Konto für die Authentifizierung aus.",
+      "noCustomAccounts": "Keine E-Mail-Konten mit benutzerdefiniertem OAuth gefunden. Fügen Sie zuerst unter Konten eines hinzu, dann kann es auch CalDAV autorisieren.",
       "title": "CalDAV-Quelle hinzufügen",
       "description": "Verbinden Sie sich mit einem CalDAV-Server (Nextcloud, Radicale, iCloud, FastMail etc.). Die Kalender-Erweiterung liest Termine aus den von Ihnen ausgewählten Kalendern.",
       "nameLabel": "Name",
