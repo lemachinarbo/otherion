@@ -961,6 +961,7 @@
       scrollToIndex(newIndex)
       // Blur any focused element so Enter key triggers openSelected() instead of the button
       ;(document.activeElement as HTMLElement)?.blur?.()
+      openSelected()
     }
   }
 
@@ -985,6 +986,7 @@
       scrollToIndex(newIndex)
       // Blur any focused element so Enter key triggers openSelected() instead of the button
       ;(document.activeElement as HTMLElement)?.blur?.()
+      openSelected()
     }
   }
 
