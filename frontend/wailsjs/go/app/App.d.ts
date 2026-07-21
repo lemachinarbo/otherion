@@ -241,6 +241,10 @@ export function GetConversations(arg1:string,arg2:string,arg3:number,arg4:number
 
 export function GetDarkMailContent():Promise<boolean>;
 
+export function GetOverrideEmailColors():Promise<boolean>;
+
+export function GetNewMailNotificationsEnabled():Promise<boolean>;
+
 export function GetDraft(arg1:string):Promise<smtp.ComposeMessage>;
 
 export function GetFTSIndexStatus(arg1:string):Promise<message.FTSIndexStatus>;
@@ -536,6 +540,10 @@ export function SetComposerMode(arg1:string):Promise<void>;
 export function SetContactSourceWritable(arg1:string,arg2:boolean):Promise<void>;
 
 export function SetDarkMailContent(arg1:boolean):Promise<void>;
+
+export function SetOverrideEmailColors(arg1:boolean):Promise<void>;
+
+export function SetNewMailNotificationsEnabled(arg1:boolean):Promise<void>;
 
 export function SetDefaultIdentity(arg1:string,arg2:string):Promise<void>;
 
