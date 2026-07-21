@@ -191,18 +191,18 @@ endif
 
 # Install Aerion on Linux
 install-linux: build
-	@echo "Installing Aerion to $(DESTDIR)$(PREFIX)..."
+	@echo "Installing Otherion to $(DESTDIR)$(PREFIX)..."
+	install -Dm755 build/bin/aerion "$(DESTDIR)$(PREFIX)/bin/otherion"
 	install -Dm755 build/bin/aerion "$(DESTDIR)$(PREFIX)/bin/aerion"
-	install -Dm644 build/appicon.png "$(DESTDIR)$(PREFIX)/share/icons/hicolor/256x256/apps/io.github.hkdb.Aerion.png"
-	install -Dm644 build/linux/aerion.desktop "$(DESTDIR)$(PREFIX)/share/applications/io.github.hkdb.Aerion.desktop"
+	install -Dm644 build/appicon.png "$(DESTDIR)$(PREFIX)/share/icons/hicolor/256x256/apps/otherion.png"
+	install -Dm644 build/linux/otherion.desktop "$(DESTDIR)$(PREFIX)/share/applications/otherion.desktop"
+	rm -f "$(DESTDIR)$(PREFIX)/share/applications/io.github.hkdb.Aerion.desktop"
 	@echo "Updating icon cache..."
 	-gtk-update-icon-cache -f -t "$(DESTDIR)$(PREFIX)/share/icons/hicolor" 2>/dev/null || true
 	@echo ""
 	@echo "Installation complete!"
-	@echo "You may need to log out and back in for the application to appear in your menu."
-	@echo ""
-	@echo "To set Aerion as your default email client:"
-	@echo "  xdg-mime default io.github.hkdb.Aerion.desktop x-scheme-handler/mailto"
+	@echo "To set Otherion as your default email client:"
+	@echo "  xdg-mime default otherion.desktop x-scheme-handler/mailto"
 
 # Uninstall Aerion from Linux
 uninstall-linux:

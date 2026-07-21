@@ -1,0 +1,21 @@
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Otherion
+GenericName=Email Client
+Comment=A modern email client customized for Omarchy Linux
+Keywords=Mail;E-mail;email;IMAP;SMTP;CardDAV;
+Icon=otherion
+TryExec=otherion
+Exec=otherion %U
+Terminal=false
+Categories=Network;Email;
+MimeType=x-scheme-handler/mailto;
+StartupNotify=true
+StartupWMClass=Otherion
+X-GNOME-UsesNotifications=true
+Actions=compose;
+
+[Desktop Action compose]
+Name=Compose New Email
+Exec=otherion mailto:
