@@ -2,11 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "packages": {
     ".": {
-      "release-type": "node",
+      "release-type": "simple",
       "package-name": "otherion",
       "initial-version": "0.1.0",
       "extra-files": [
-        "wails.json"
+        "wails.json",
+        "frontend/package.json"
       ]
     }
   }
