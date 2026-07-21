@@ -1,4 +1,21 @@
-# CHANGELOG
+# Changelog
+
+## [0.2.0](https://github.com/lemachinarbo/otherion/compare/otherion-v0.1.0...otherion-v0.2.0) (2026-07-21)
+
+
+### Features
+
+* add live IPC theming support via CLI and single-instance Unix sockets ([4338fbc](https://github.com/lemachinarbo/otherion/commit/4338fbcfc798337b0df67d707c7cf9a03b62299a))
+* add omarchy default themes support ([80779e0](https://github.com/lemachinarbo/otherion/commit/80779e0b831d57c8c42d7e0a8f0cc14ea65ac5ce))
+* add settings toggle for action toasts and cap toast container stack to 3 items ([97ab250](https://github.com/lemachinarbo/otherion/commit/97ab2500fa52f17a2293ba3ef215f3359360b6e6))
+* auto-view emails on keyboard navigation ([c3fde43](https://github.com/lemachinarbo/otherion/commit/c3fde43e3de288d37484c0b4b624a4794bbaa7f4))
+
+
+### Bug Fixes
+
+* **frontend:** fix eslint indentation and unused disable directives ([6dc2559](https://github.com/lemachinarbo/otherion/commit/6dc255984ee5674e8036e783bf1525d24d26975b))
+
+## CHANGELOG
 
 
 **v0.3.0 - 06-23-2026**
