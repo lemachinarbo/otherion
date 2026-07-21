@@ -15,6 +15,7 @@
   import CertificateDialog from './lib/components/settings/CertificateDialog.svelte'
   import ExtensionSettingsDialog from './lib/components/settings/ExtensionSettingsDialog.svelte'
   import ExtensionRail from './lib/components/rail/ExtensionRail.svelte'
+  import SettingsPane from '$lib/components/settings/SettingsPane.svelte'
   import ContactsPane from '$extensions/contacts/frontend/components/ContactsPane.svelte'
   import CalendarPane from '$extensions/calendar/frontend/components/CalendarPane.svelte'
   import { refreshExtensionRegistry, getRailTabs } from '$lib/stores/extensionRegistry.svelte'
@@ -1456,6 +1457,10 @@
   <!-- Main Content -->
   <div class="flex flex-1 min-h-0 overflow-hidden relative">
     <ExtensionRail />
+
+    {#if getActiveExtension() === 'settings'}
+      <SettingsPane />
+    {/if}
 
     {#if getActiveExtension() === 'contacts'}
       <ContactsPane />

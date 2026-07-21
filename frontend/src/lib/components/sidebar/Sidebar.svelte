@@ -10,7 +10,7 @@
   import { Button } from '$lib/components/ui/button'
   import { accountStore } from '$lib/stores/accounts.svelte'
   import { contactSourcesStore } from '$lib/stores/contactSources.svelte'
-  import { isAccountExpanded, setAccountExpanded, isUnifiedInboxExpanded, setFolderCollapsed, getUIState, getUIStateVersion, saveUIState } from '$lib/stores/uiState.svelte'
+  import { isAccountExpanded, setAccountExpanded, isUnifiedInboxExpanded, setFolderCollapsed, getUIState, getUIStateVersion, saveUIState, setActiveExtension } from '$lib/stores/uiState.svelte'
   import { setFocusedPane } from '$lib/stores/keyboard.svelte'
   import { _ } from '$lib/i18n'
   // @ts-ignore - wailsjs path
@@ -654,7 +654,7 @@
     {#snippet trailing()}
       <button
         class="p-1 hover:text-foreground hover:bg-muted rounded transition-colors relative"
-        onclick={() => showSettingsDialog = true}
+        onclick={() => setActiveExtension('settings')}
         title={$_('sidebar.settings')}
       >
         <Icon icon="mdi:cog" class="w-4 h-4" />
