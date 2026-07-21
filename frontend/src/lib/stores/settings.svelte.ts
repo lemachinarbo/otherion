@@ -2,7 +2,7 @@
 // Provides reactive state for application settings
 
 // @ts-ignore - wailsjs path
-import { GetMessageListDensity, GetMessageListSortOrder, GetThemeMode, GetShowTitleBar, GetRunBackground, GetStartHidden, GetAutostart, GetLanguage, GetComposerMode, GetMailtoMode, GetComposerFormat, GetNativeTitleBar, GetAlwaysLoadImages, GetDarkMailContent, GetOverrideEmailColors, SetOverrideEmailColors, GetAccentBarUnread, GetShowMessageListCircles, GetShowViewerCircles, GetShowActionToasts, GetNewMailNotificationsEnabled } from '../../../wailsjs/go/app/App'
+import { GetMessageListDensity, GetMessageListSortOrder, GetThemeMode, GetShowTitleBar, GetRunBackground, GetStartHidden, GetAutostart, GetLanguage, GetComposerMode, GetMailtoMode, GetComposerFormat, GetNativeTitleBar, GetAlwaysLoadImages, GetDarkMailContent, GetOverrideEmailColors, GetAccentBarUnread, GetShowMessageListCircles, GetShowViewerCircles, GetShowActionToasts, GetNewMailNotificationsEnabled } from '../../../wailsjs/go/app/App'
 import { setLocale as setI18nLocale } from '$lib/i18n'
 import { loadDateFnsLocale, getDateFnsLocale } from '$lib/i18n/dateFnsLocale'
 import type { Locale } from 'date-fns'
