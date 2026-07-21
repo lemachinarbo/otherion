@@ -47,6 +47,8 @@
     SetAlwaysLoadImages,
     GetDarkMailContent,
     SetDarkMailContent,
+    GetOverrideEmailColors,
+    SetOverrideEmailColors,
     GetAccentBarUnread,
     SetAccentBarUnread,
     GetShowMessageListCircles,
@@ -55,6 +57,8 @@
     SetShowViewerCircles,
     GetShowActionToasts,
     SetShowActionToasts,
+    GetNewMailNotificationsEnabled,
+    SetNewMailNotificationsEnabled,
   } from '../../../../wailsjs/go/app/App.js'
 
   import { addToast } from '$lib/stores/toast'
@@ -72,10 +76,12 @@
     setNativeTitleBar as updateNativeTitleBarStore,
     setAlwaysLoadImages as updateAlwaysLoadImagesStore,
     setDarkMailContent as updateDarkMailContentStore,
+    setOverrideEmailColors as updateOverrideEmailColorsStore,
     setAccentBarUnread as updateAccentBarUnreadStore,
     setShowMessageListCircles as updateShowMessageListCirclesStore,
     setShowViewerCircles as updateShowViewerCirclesStore,
     setShowActionToasts as updateShowActionToastsStore,
+    setNewMailNotificationsEnabled as updateNewMailNotificationsEnabledStore,
     type MessageListDensity,
     type ThemeMode,
     type ComposerMode,
@@ -103,10 +109,12 @@
   let nativeTitleBar = $state<boolean>(false)
   let alwaysLoadImages = $state<boolean>(false)
   let darkMailContent = $state<boolean>(false)
+  let overrideEmailColors = $state<boolean>(false)
   let accentBarUnread = $state<boolean>(false)
   let showMessageListCircles = $state<boolean>(true)
   let showViewerCircles = $state<boolean>(true)
   let showActionToasts = $state<boolean>(true)
+  let newMailNotificationsEnabled = $state<boolean>(true)
 
   $effect(() => {
     if (loading || !themeMode) return
@@ -131,10 +139,12 @@
         nTitleBar,
         aImages,
         dMail,
+        oColors,
         aUnread,
         mCircles,
         vCircles,
         aToasts,
+        newMailNotif,
       ] = await Promise.all([
         GetReadReceiptResponsePolicy(),
         GetMarkAsReadDelay(),
@@ -151,10 +161,12 @@
         GetNativeTitleBar(),
         GetAlwaysLoadImages(),
         GetDarkMailContent(),
+        GetOverrideEmailColors(),
         GetAccentBarUnread(),
         GetShowMessageListCircles(),
         GetShowViewerCircles(),
         GetShowActionToasts(),
+        GetNewMailNotificationsEnabled(),
       ])
 
       readReceiptResponsePolicy = policy || 'ask'
@@ -172,10 +184,12 @@
       nativeTitleBar = nTitleBar ?? false
       alwaysLoadImages = aImages ?? false
       darkMailContent = dMail ?? false
+      overrideEmailColors = oColors ?? false
       accentBarUnread = aUnread ?? false
       showMessageListCircles = mCircles ?? true
       showViewerCircles = vCircles ?? true
       showActionToasts = aToasts ?? true
+      newMailNotificationsEnabled = newMailNotif ?? true
     } catch (err) {
       console.error('Failed to load settings:', err)
       addToast({
@@ -208,10 +222,12 @@
         SetNativeTitleBar(nativeTitleBar),
         SetAlwaysLoadImages(alwaysLoadImages),
         SetDarkMailContent(darkMailContent),
+        SetOverrideEmailColors(overrideEmailColors),
         SetAccentBarUnread(accentBarUnread),
         SetShowMessageListCircles(showMessageListCircles),
         SetShowViewerCircles(showViewerCircles),
         SetShowActionToasts(showActionToasts),
+        SetNewMailNotificationsEnabled(newMailNotificationsEnabled),
       ])
 
       updateDensityStore(messageListDensity as MessageListDensity)
@@ -227,10 +243,12 @@
       updateNativeTitleBarStore(nativeTitleBar)
       updateAlwaysLoadImagesStore(alwaysLoadImages)
       updateDarkMailContentStore(darkMailContent)
+      updateOverrideEmailColorsStore(overrideEmailColors)
       updateAccentBarUnreadStore(accentBarUnread)
       updateShowMessageListCirclesStore(showMessageListCircles)
       updateShowViewerCirclesStore(showViewerCircles)
       updateShowActionToastsStore(showActionToasts)
+      updateNewMailNotificationsEnabledStore(newMailNotificationsEnabled)
 
       addToast({
         message: $_('settings.savedSuccess'),
@@ -322,7 +340,9 @@
           bind:showMessageListCircles
           bind:showViewerCircles
           bind:darkMailContent
+          bind:overrideEmailColors
           bind:showActionToasts
+          bind:newMailNotificationsEnabled
           onDelayChange={(v) => (markAsReadDelaySeconds = v)}
           onDensityChange={(v) => (messageListDensity = v)}
           onThemeChange={(v) => (themeMode = v)}
