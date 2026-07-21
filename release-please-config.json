@@ -7,7 +7,12 @@
       "initial-version": "0.1.0",
       "extra-files": [
         "wails.json",
-        "frontend/package.json"
+        "frontend/package.json",
+        {
+          "type": "generic",
+          "path": "app/state.go",
+          "template": "const Version = \"${version}\""
+        }
       ]
     }
   }
