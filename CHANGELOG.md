@@ -1,4 +1,25 @@
-# CHANGELOG
+# Changelog
+
+## [0.3.0](https://github.com/lemachinarbo/otherion/compare/otherion-v0.2.0...otherion-v0.3.0) (2026-07-21)
+
+
+### Features
+
+* add live IPC theming support via CLI and single-instance Unix sockets ([4338fbc](https://github.com/lemachinarbo/otherion/commit/4338fbcfc798337b0df67d707c7cf9a03b62299a))
+* add omarchy default themes support ([80779e0](https://github.com/lemachinarbo/otherion/commit/80779e0b831d57c8c42d7e0a8f0cc14ea65ac5ce))
+* add settings toggle for action toasts and cap toast container stack to 3 items ([97ab250](https://github.com/lemachinarbo/otherion/commit/97ab2500fa52f17a2293ba3ef215f3359360b6e6))
+* auto-view emails on keyboard navigation ([c3fde43](https://github.com/lemachinarbo/otherion/commit/c3fde43e3de288d37484c0b4b624a4794bbaa7f4))
+* **desktop:** add otherion.desktop launcher and update install targets ([82f7e85](https://github.com/lemachinarbo/otherion/commit/82f7e858d0307a1e169690d50b08ec4be4c49cc4))
+* **settings:** restore full-window SettingsPane and wire gear icon buttons ([9ca150b](https://github.com/lemachinarbo/otherion/commit/9ca150bbbb9bb2d5ad62efb990363285711c1602))
+
+
+### Bug Fixes
+
+* **frontend:** fix eslint indentation and unused disable directives ([6dc2559](https://github.com/lemachinarbo/otherion/commit/6dc255984ee5674e8036e783bf1525d24d26975b))
+* **i18n:** add missing settings and shortcuts translation keys to en.json ([cb0d004](https://github.com/lemachinarbo/otherion/commit/cb0d0045d3c6ed33ce2c08d1e53de53b750d2a43))
+* restrict single-key shortcuts while typing and sync About dialog metadata to 0.1.0 ([c9ac893](https://github.com/lemachinarbo/otherion/commit/c9ac893bec0803976a8d6f28f865d63c52b415c2))
+
+## CHANGELOG
 
 
 **v0.3.0 - 06-23-2026**
