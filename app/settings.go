@@ -317,7 +317,19 @@ func (a *App) SetOverrideEmailColors(enabled bool) error {
 	return a.settingsStore.SetOverrideEmailColors(enabled)
 }
 
+
+// GetNewMailNotificationsEnabled returns whether new mail desktop notifications are enabled.
+func (a *App) GetNewMailNotificationsEnabled() (bool, error) {
+	return a.settingsStore.GetNewMailNotificationsEnabled()
+}
+
+// SetNewMailNotificationsEnabled enables or disables new mail desktop notifications.
+func (a *App) SetNewMailNotificationsEnabled(enabled bool) error {
+	return a.settingsStore.SetNewMailNotificationsEnabled(enabled)
+}
+
 // AddImageAllowlist adds a domain or sender to the image allowlist
+
 // entryType: "domain" or "sender"
 // value: the domain (e.g., "company.com") or email (e.g., "newsletter@company.com")
 func (a *App) AddImageAllowlist(entryType, value string) error {

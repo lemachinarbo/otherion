@@ -37,7 +37,8 @@ const (
 	KeyShowViewerCircles         = "show_viewer_circles"
 	KeyLastSeenVersion           = "last_seen_version"      // for "What's new in this version" launch dialog
 	KeyOAuthWarningDisabled      = "oauth_warning_disabled" // user toggled "Don't show again" on the missing-OAuth-creds launch warning
-	KeyShowActionToasts          = "show_action_toasts"
+	KeyShowActionToasts             = "show_action_toasts"
+	KeyNewMailNotificationsEnabled  = "new_mail_notifications_enabled"
 )
 
 // Extension enable/disable keys. Format: extension_<name>_enabled.
@@ -735,6 +736,28 @@ func (s *Store) SetOverrideEmailColors(enabled bool) error {
 	return s.Set(KeyOverrideEmailColors, value)
 }
 
+
+// GetNewMailNotificationsEnabled returns whether desktop notifications are shown for new emails. On by default.
+func (s *Store) GetNewMailNotificationsEnabled() (bool, error) {
+	value, err := s.Get(KeyNewMailNotificationsEnabled)
+	if err != nil {
+		return false, err
+	}
+	if value == "" {
+		return true, nil // default on
+	}
+	return value == "true", nil
+}
+
+// SetNewMailNotificationsEnabled persists the new-mail-notifications-enabled toggle.
+func (s *Store) SetNewMailNotificationsEnabled(enabled bool) error {
+	value := "false"
+	if enabled {
+		value = "true"
+	}
+	return s.Set(KeyNewMailNotificationsEnabled, value)
+}
+
 // ReadNativeTitleBar opens the database directly to read the native_titlebar setting.
 // Used in main.go before wails.Run() when the full DB isn't initialized yet.
 // Returns false on any error (first run, missing DB, etc.).
@@ -768,4 +791,5 @@ func WriteThemeMode(dbPath string, mode string) error {
 	`, mode)
 	return err
 }
+
 
