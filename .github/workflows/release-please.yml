@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,11 +14,16 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Release Please
+        uses: googleapis/release-please-action@v4
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          target-branch: main
 
       - name: Output Release Tag
         if: ${{ steps.release.outputs.release_created }}
