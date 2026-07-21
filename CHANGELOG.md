@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/lemachinarbo/otherion/compare/otherion-v0.3.0...otherion-v0.4.0) (2026-07-21)
+
+
+### Features
+
+* **settings:** add experimental toggle to override email backgrounds and inherit theme colors ([abec9ac](https://github.com/lemachinarbo/otherion/commit/abec9ac2dda8e07cbe402e397dbbfb07495a0f81))
+* **settings:** add new email notifications toggle and wire missing settings ([4e55299](https://github.com/lemachinarbo/otherion/commit/4e55299abe394df2103abf40e307145e22bf073f))
+
+
+### Bug Fixes
+
+* **frontend:** add missing types to App.d.ts and wire newMailNotificationsEnabled in SettingsDialog.svelte ([41b15fc](https://github.com/lemachinarbo/otherion/commit/41b15fce3f9ad5cf9b1a532a7a111721fddfbe32))
+* **lint:** resolve ESLint trailing spaces, useless assignment, and unused imports ([4462339](https://github.com/lemachinarbo/otherion/commit/4462339889c28dbdbe7964c84c8464784dd90331))
+
 ## [0.3.0](https://github.com/lemachinarbo/otherion/compare/otherion-v0.2.0...otherion-v0.3.0) (2026-07-21)
 
 
