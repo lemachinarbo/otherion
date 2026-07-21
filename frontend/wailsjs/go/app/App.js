@@ -610,6 +610,10 @@ export function GetSearchCountUnifiedInbox(arg1, arg2) {
   return window['go']['app']['App']['GetSearchCountUnifiedInbox'](arg1, arg2);
 }
 
+export function GetShowActionToasts() {
+  return window['go']['app']['App']['GetShowActionToasts']();
+}
+
 export function GetShowMessageListCircles() {
   return window['go']['app']['App']['GetShowMessageListCircles']();
 }
@@ -1114,6 +1118,10 @@ export function SetSMIMESignPolicy(arg1, arg2) {
   return window['go']['app']['App']['SetSMIMESignPolicy'](arg1, arg2);
 }
 
+export function SetShowActionToasts(arg1) {
+  return window['go']['app']['App']['SetShowActionToasts'](arg1);
+}
+
 export function SetShowMessageListCircles(arg1) {
   return window['go']['app']['App']['SetShowMessageListCircles'](arg1);
 }
@@ -1236,12 +1244,4 @@ export function UpdateIdentity(arg1, arg2) {
 
 export function UpdateLocalFlags(arg1, arg2, arg3) {
   return window['go']['app']['App']['UpdateLocalFlags'](arg1, arg2, arg3);
-}
-
-export function GetShowActionToasts() {
-  return window['go']['app']['App']['GetShowActionToasts']();
-}
-
-export function SetShowActionToasts(arg1) {
-  return window['go']['app']['App']['SetShowActionToasts'](arg1);
 }

@@ -864,49 +864,57 @@
     const inInput = isInputElement(e.target)
     const focusedPane = getFocusedPane()
     const hasConversation = selectedThreadId !== null
+    const isMailActive = () => getActiveExtension() === 'mail'
 
-    // Don't intercept keyboard events when a context menu or dropdown is open
-    // (bits-ui portals mount [role="menu"] only while open)
-    if (document.querySelector('[role="menu"]')) return
+    if (inInput) {
+      // Don't intercept single-key shortcuts when typing inside an input/textarea/editor!
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key !== 'Escape') {
+        return
+      }
+    }
 
     // Don't intercept while a modal dialog has the guard active — keystrokes
-    // (especially Ctrl+A) should target dialog inputs, not the background.
+    // should target dialog inputs, not the background.
     if (isDialogGuardActive()) return
 
-    // Extension shortcut dispatch: when the active rail pane is NOT mail, let
-    // the extension's registered shortcuts run first. dispatchExtensionShortcut
-    // returns true when a handler matched — in that case we treat the event as
-    // handled and skip mail's downstream dispatch. Skipped while typing in an
-    // input element (consistent with mail's inInput guard below) so extension
-    // shortcuts don't fire from inside text fields. See [[extension-sdk-pattern]]
-    // and frontend/src/lib/stores/extensionShortcuts.svelte.ts.
+    // Extension shortcut dispatch: when typing is not active and active rail pane is NOT mail,
+    // let registered extension shortcuts run first.
     if (!inInput && dispatchExtensionShortcut(e)) {
       e.preventDefault()
       e.stopPropagation()
       return
     }
 
-    // When composer is open, only handle Escape (composer handles its own shortcuts)
-    if (showComposer) {
-      // Block compose/reply shortcuts that might conflict
-      if ((e.ctrlKey || e.metaKey) && ['r', 'f'].includes(e.key.toLowerCase())) {
+    // Configurable mail actions (Archive, Spam) — work with single keys like 'E' or modifier combos
+    // ONLY when typing is not active and a message list/viewer pane is focused.
+    if (!inInput && isMailActive() && (focusedPane === 'messageList' || focusedPane === 'viewer')) {
+      if (KEY.ARCHIVE(e)) {
         e.preventDefault()
+        if (messageListRef?.hasCheckedMessages()) {
+          handleBulkArchive(messageListRef.getCheckedMessageIds())
+        } else {
+          const focusedIds = messageListRef?.getSelectedMessageIds() ?? []
+          if (focusedIds.length > 0) {
+            handleBulkArchive(focusedIds)
+          }
+        }
         return
       }
-      return
+
+      if (KEY.SPAM(e)) {
+        e.preventDefault()
+        if (messageListRef?.hasCheckedMessages()) {
+          handleBulkSpam(messageListRef.getCheckedMessageIds())
+        } else {
+          const focusedIds = messageListRef?.getSelectedMessageIds() ?? []
+          if (focusedIds.length > 0) {
+            handleBulkSpam(focusedIds)
+          }
+        }
+        return
+      }
     }
 
-    // Handle Ctrl/Cmd shortcuts.
-    //
-    // Layout: GLOBAL cases first (fire regardless of which rail pane is active),
-    // then a guard that returns when an extension is the active rail pane, then
-    // MAIL-DOMAIN cases (fire only on mail). The kit's components (extension UI)
-    // handle their own list/sidebar shortcuts via local tabindex+keydown +
-    // stopPropagation, so those events never reach this handler in the first
-    // place. The guard catches the case where Ctrl+R / Ctrl+K / etc. fire
-    // with no kit pane DOM-focused but an extension is the active rail pane —
-    // we don't want those acting on the (hidden) mail UI.
-    const isMailActive = () => getActiveExtension() === 'mail'
     if (e.ctrlKey || e.metaKey) {
       // GLOBAL Ctrl/Cmd shortcuts — fire regardless of active rail pane.
       switch (e.key.toLowerCase()) {
@@ -916,15 +924,10 @@
           return
         case 'tab':
         case '`': {
-          // Cycle through rail items: Mail + enabled extensions.
-          // Ctrl+Tab        → forward
-          // Ctrl+`          → backward
-          // (Ctrl+Shift+Tab is intercepted by webkit2gtk before the
-          //  keydown event reaches us, so we use Ctrl+` for backward.)
           e.preventDefault()
           const tabs = getRailTabs()
           const order = ['mail', ...tabs.map(t => t.extensionId)]
-          if (order.length <= 1) return // only Mail — nothing to cycle
+          if (order.length <= 1) return
           const current = getActiveExtension()
           const idx = order.indexOf(current)
           const step = e.key === '`' ? -1 : 1
@@ -934,10 +937,6 @@
         }
       }
 
-      // Ctrl+S (no shift) — focus the active pane's search input.
-      // Mail dispatches to messageListRef; extensions dispatch via the
-      // pane-nav registry. Ctrl+Shift+S (sync folder) is mail-only and
-      // stays in the mail-domain switch below.
       if (e.key.toLowerCase() === 's' && !e.shiftKey) {
         e.preventDefault()
         if (isMailActive()) {
@@ -950,18 +949,8 @@
         return
       }
 
-      // Below: MAIL-DOMAIN Ctrl/Cmd shortcuts. Guarded so they no-op when an
-      // extension is the active rail pane (otherwise Ctrl+R would silently
-      // reply to the hidden mail thread while the user is browsing contacts).
-      if (!isMailActive()) return
-
-      // MAIL-DOMAIN Ctrl/Cmd cases (guarded above).
       switch (e.key.toLowerCase()) {
         case 'n':
-          // Ctrl/Cmd+N — new mail composer. Mail-domain only: when an
-          // extension rail is active (e.g., calendar), that extension's
-          // shortcut registry handles Ctrl+N before we reach the global
-          // switch, opening its own "new X" dialog.
           e.preventDefault()
           handleCompose()
           return
@@ -993,20 +982,16 @@
           return
         }
         case 's':
-          // Ctrl+S (no shift) is handled globally above. Only Ctrl+Shift+S
-          // (sync current folder) is mail-domain and lives here.
           if (!e.shiftKey) return
           e.preventDefault()
           messageListRef?.toggleFolderSync()
           return
         case 'a':
           if (e.shiftKey) {
-            // Ctrl-Shift-A: Toggle sync all accounts (start sync or cancel if already running)
             e.preventDefault()
             sidebarRef?.toggleSync()
             return
           }
-          // Ctrl-A: Select all text in viewer, or select all messages in list
           e.preventDefault()
           if (focusedPane === 'viewer') {
             viewerRef?.selectAllText()
@@ -1017,10 +1002,8 @@
         case 'l':
           e.preventDefault()
           if (e.shiftKey) {
-            // Ctrl-Shift-L: Open "Always Load" dropdown
             viewerRef?.openAlwaysLoadDropdown()
           } else {
-            // Ctrl-L: Load images for this message
             viewerRef?.loadImages()
           }
           return
@@ -1034,7 +1017,6 @@
               handleBulkMarkRead(messageIds)
             }
           } else {
-            // Mark the keyboard-focused message as read/unread
             const focusedIds = messageListRef?.getSelectedMessageIds() ?? []
             if (focusedIds.length > 0) {
               if (e.shiftKey) {
@@ -1042,30 +1024,6 @@
               } else {
                 handleBulkMarkRead(focusedIds)
               }
-            }
-          }
-          return
-        case 'k':
-          e.preventDefault()
-          if (messageListRef?.hasCheckedMessages()) {
-            handleBulkArchive(messageListRef.getCheckedMessageIds())
-          } else {
-            // Archive the keyboard-focused message
-            const focusedIds = messageListRef?.getSelectedMessageIds() ?? []
-            if (focusedIds.length > 0) {
-              handleBulkArchive(focusedIds)
-            }
-          }
-          return
-        case 'j':
-          e.preventDefault()
-          if (messageListRef?.hasCheckedMessages()) {
-            handleBulkSpam(messageListRef.getCheckedMessageIds())
-          } else {
-            // Spam the keyboard-focused message
-            const focusedIds = messageListRef?.getSelectedMessageIds() ?? []
-            if (focusedIds.length > 0) {
-              handleBulkSpam(focusedIds)
             }
           }
           return

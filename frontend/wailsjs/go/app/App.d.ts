@@ -323,6 +323,8 @@ export function GetSearchCount(arg1:string,arg2:string,arg3:string,arg4:string):
 
 export function GetSearchCountUnifiedInbox(arg1:string,arg2:string):Promise<number>;
 
+export function GetShowActionToasts():Promise<boolean>;
+
 export function GetShowMessageListCircles():Promise<boolean>;
 
 export function GetShowTitleBar():Promise<boolean>;
@@ -575,6 +577,8 @@ export function SetSMIMEEncryptPolicy(arg1:string,arg2:string):Promise<void>;
 
 export function SetSMIMESignPolicy(arg1:string,arg2:string):Promise<void>;
 
+export function SetShowActionToasts(arg1:boolean):Promise<void>;
+
 export function SetShowMessageListCircles(arg1:boolean):Promise<void>;
 
 export function SetShowTitleBar(arg1:boolean):Promise<void>;
@@ -636,7 +640,3 @@ export function UpdateContactSource(arg1:string,arg2:carddav.SourceConfig):Promi
 export function UpdateIdentity(arg1:string,arg2:account.IdentityConfig):Promise<account.Identity>;
 
 export function UpdateLocalFlags(arg1:Array<string>,arg2:any,arg3:any):Promise<void>;
-
-export function GetShowActionToasts():Promise<boolean>;
-
-export function SetShowActionToasts(arg1:boolean):Promise<void>;

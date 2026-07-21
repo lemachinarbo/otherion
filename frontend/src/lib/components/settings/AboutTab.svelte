@@ -28,21 +28,14 @@
     }
   })
 
-  const PRIVACY_URL = 'https://github.com/hkdb/aerion/blob/main/docs/PRIVACY.md'
-  const TERMS_URL = 'https://github.com/hkdb/aerion/blob/main/docs/TERMS.md'
-
   function openWebsite() {
     if (appInfo?.website) {
       BrowserOpenURL(appInfo.website)
     }
   }
 
-  function openPrivacyPolicy() {
-    BrowserOpenURL(PRIVACY_URL)
-  }
-
-  function openTermsOfService() {
-    BrowserOpenURL(TERMS_URL)
+  function openUpstream() {
+    BrowserOpenURL('https://github.com/hkdb/aerion')
   }
 </script>
 
@@ -59,10 +52,15 @@
       </div>
     </div>
 
-    <!-- Description -->
-    <p class="text-center text-sm text-muted-foreground max-w-xs">
-      {appInfo.description}
-    </p>
+    <!-- Description & Attribution -->
+    <div class="text-center space-y-2 max-w-sm">
+      <p class="text-sm text-muted-foreground">
+        {appInfo.description}
+      </p>
+      <p class="text-xs text-muted-foreground/80">
+        Based on <button onclick={openUpstream} class="underline hover:text-foreground inline-flex items-center gap-0.5">Aerion by HKDB</button> ({appInfo.license})
+      </p>
+    </div>
 
     <!-- Links -->
     <div class="flex flex-col items-center gap-2">
@@ -73,22 +71,7 @@
         <Icon icon="mdi:github" class="w-5 h-5" />
         <span>{$_('settingsAbout.github')}</span>
       </button>
-      <button
-        onclick={openPrivacyPolicy}
-        class="flex items-center gap-2 text-sm text-primary hover:underline transition-colors"
-      >
-        <Icon icon="mdi:shield-account" class="w-5 h-5" />
-        <span>{$_('settingsAbout.privacyPolicy')}</span>
-      </button>
-      <button
-        onclick={openTermsOfService}
-        class="flex items-center gap-2 text-sm text-primary hover:underline transition-colors"
-      >
-        <Icon icon="mdi:file-document" class="w-5 h-5" />
-        <span>{$_('settingsAbout.termsOfUse')}</span>
-      </button>
     </div>
-
   {:else}
     <p class="text-muted-foreground">{$_('settingsAbout.failedToLoad')}</p>
   {/if}
