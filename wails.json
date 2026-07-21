@@ -9,7 +9,7 @@
   "info": {
     "companyName": "Otherion",
     "productName": "Otherion",
-    "productVersion": "0.2.0",
+    "productVersion": "0.3.0",
     "comments": "A modern email client customized for Omarchy Linux",
     "protocols": [
       {
